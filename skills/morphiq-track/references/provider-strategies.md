@@ -145,3 +145,73 @@ This ensures consistent competitor tracking across providers where different mod
 ## Citation Extraction
 
 Citations extracted from AI responses are categorized into 11 types. For the full citation category definitions and frequency calculation, refer to `query-targets.md`.
+
+---
+
+## Implementation Requirements
+
+These are mandatory behaviors that `scripts/run-queries.py` enforces for every query execution. They exist here (not just in SKILL.md) because the skill description may be summarized, but this reference file is loaded in full when the agent configures providers.
+
+### Full Response Capture
+
+Never truncate response text. The complete text is required downstream by morphiq-build for content creation briefs and by the analysis pipeline for accurate brand position detection. Store the full `response_text` in results.
+
+### Sub-Query Extraction
+
+Sub-queries feed three systems: invisible SoV (share-of-voice.md), fanout coverage (tracker-spec.md §12), and Workflow C (SKILL.md). Extraction is provider-specific:
+
+| Provider | How to Extract |
+|---|---|
+| OpenAI | Iterate `response.output`, find items with `type == "web_search_call"`, read `.query` or `.search_query` |
+| Perplexity | Opaque — no sub-queries available |
+| Anthropic | Iterate `response.content`, find `server_tool_use` blocks with `name == "web_search"`, read `.input.query` |
+| Gemini | Check `grounding_metadata.web_search_queries` if available; otherwise opaque |
+
+### Citation Deduplication
+
+After collecting citations per response:
+1. Strip tracking parameters from URLs (`utm_*`, `fbclid`, `gclid`, `mc_*`, `msclkid`, `ref`).
+2. Deduplicate by cleaned URL.
+3. Track `citation_weight` — the number of times each URL appeared before dedup.
+4. Preserve the highest-fidelity metadata (title, resolved_domain) from the first occurrence.
+
+### Gemini Proxy URL Resolution
+
+Gemini returns `vertexaisearch.cloud.google.com` redirect URLs instead of actual source URLs. Resolution:
+1. Follow the HTTP redirect (GET with 5s timeout).
+2. If redirect succeeds, use the final URL and extract `resolved_domain` from it.
+3. If redirect fails, use the `grounding_chunk.web.title` as `resolved_domain` and keep the proxy URL: `{url: proxy_url, title: title, resolved_domain: title}`.
+
+### Perplexity Citation Paths
+
+Perplexity's citations are not part of the standard OpenAI response schema. The OpenAI-compatible client stores them in non-standard fields. Check in order:
+1. `response.citations` (direct attribute)
+2. `response.model_extra["citations"]` (pydantic v2 extra fields)
+3. `response.__dict__["citations"]` (fallback)
+4. `response.choices[0].message.model_extra["citations"]` (message-level extras)
+
+Citations may be a list of URL strings or a list of dicts with `url` and `title` keys. Handle both.
+
+### Anthropic Tool Configuration
+
+The web search tool spec must be:
+```json
+{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}
+```
+
+Model fallback chain: `claude-sonnet-4-5-20250514` → `claude-sonnet-4-20250514`. If the primary model is unavailable or returns a model-not-found error, try the fallback before marking as failed.
+
+Response content blocks:
+- `text` — the final answer. Extract text here. May contain inline `citations` with `url` fields.
+- `web_search_tool_result` — search results. Each item in `.content` may have `url` and `title`.
+- `server_tool_use` — the search call itself. Contains the query in `.input.query`.
+
+Only concatenate text from `text` blocks. Extract citations from both `text` block inline citations and `web_search_tool_result` content items.
+
+### Retry Logic
+
+For all providers: on any error, retry once after a 2-second delay before recording the error. This handles transient rate limits and network blips. The retry is a simple re-execution of the same query, not exponential backoff (that is handled at the concurrency level by the agent).
+
+### Configuration
+
+All brand/domain/competitor values come from the `config` block in the prompts JSON file. API keys come from environment variables (`OPENAI_API_KEY`, `PERPLEXITY_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`). Nothing is hardcoded in scripts or skill files.

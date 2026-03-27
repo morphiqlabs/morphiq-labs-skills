@@ -42,23 +42,37 @@ For taxonomy, fanout profiles, and generation rules, read `references/prompt-tax
 
 ### Step 2: Query AI Providers
 
-Distribute prompts evenly across 4 providers:
+Distribute prompts evenly across 4 providers. Execute using `scripts/run-queries.py --mode execute`.
 
 | Provider | Model | Concurrency |
 |---|---|---|
 | OpenAI | gpt-4o | Full |
 | Perplexity | sonar-pro | 2 concurrent |
-| Anthropic | claude-sonnet-4-5 | Serialized |
-| Gemini | gemini-3-flash-preview | 3 concurrent |
+| Anthropic | claude-sonnet-4-5-20250514 → claude-sonnet-4-20250514 | Serialized |
+| Gemini | gemini-2.5-flash | 3 concurrent |
 
-Model names reflect recommended defaults. Use the latest available version of each provider's model at runtime. The agent executes queries using its built-in web search and API tools — `scripts/run-queries.py` provides the orchestration plan and result structuring, not the API calls themselves.
+**Mandatory requirements for every query:**
 
-For provider config and response pipeline, read `references/provider-strategies.md`.
+1. **Full response text.** Store the complete response — never truncate. morphiq-build's content creation workflow requires the full text for analysis.
+2. **Sub-query extraction.** For each provider that exposes tool calls, extract the search queries the model issued. These feed Workflow C (Query Fanout Expansion) and invisible SoV.
+3. **Citation deduplication.** After collecting citations per response, strip UTM/tracking params from URLs and deduplicate. Track `citation_weight` (number of times each URL was cited).
+4. **Retry on transient failure.** Retry once with 2-second delay before marking as error. This handles rate limits.
+
+**Provider-specific requirements:**
+
+- **OpenAI:** Iterate `response.output` for items with `type == "web_search_call"` — extract the `query` field into `sub_queries[]`. This reveals GPT's `site:` operator searches and two-phase research pattern.
+- **Perplexity:** Citations are a Perplexity-specific field. Check `response.citations`, then `response.model_extra["citations"]`, then `response.__dict__["citations"]`, then `response.choices[0].message.model_extra["citations"]`. The OpenAI-compatible client puts unknown API fields in `model_extra`.
+- **Anthropic:** Tool config must be `{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}`. Try model `claude-sonnet-4-5-20250514` first, fall back to `claude-sonnet-4-20250514`. Response content blocks include `text` (final answer), `web_search_tool_result` (search results with URLs), and `server_tool_use` (the search call). Extract text only from `text` blocks; extract citations from both `text` block inline citations and `web_search_tool_result` block content.
+- **Gemini:** Grounding metadata returns `vertexaisearch.cloud.google.com` redirect URLs. Follow the redirect to get the real URL. If redirect fails, use the `grounding_chunk.web.title` as fallback domain: `{url: proxy_url, title: title, resolved_domain: title}`.
+
+For full provider config and response pipeline, read `references/provider-strategies.md`.
 For selection rules and distribution, read `references/query-targets.md`.
 
 ### Step 3: Analyze Responses
 
 5-step pipeline: extract raw response/citations/sub-queries → structured analysis (using the agent's reasoning capabilities) → brand mention validation (exact → TLD → LLM judge) → competitor filtering → entity normalization.
+
+**Input requirements for analysis:** Each response must include the full response text, deduplicated citations with `citation_weight`, and extracted sub-queries. The analysis uses the `config` block from the prompts file for brand, domain, and competitors — never hardcoded values.
 
 ### Step 4: Compute GEO Score
 
