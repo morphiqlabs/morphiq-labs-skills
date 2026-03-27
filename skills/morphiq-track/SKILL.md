@@ -1,7 +1,9 @@
 ---
-name: Morphiq Track
+name: morphiq-track
 description: This skill should be used when the user asks to "run a tracking cycle", "measure AI visibility", "check share of voice", "run Morphiq Track", "track citations", "check GEO score", "generate prompts", "run content creation workflow", or mentions monitoring LLM mentions, running content creation workflows, measuring brand visibility, or generating query fanout content. Queries multiple LLM providers, produces delta reports, and maintains MORPHIQ-TRACKER.md as the persistent state file for the entire pipeline.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
+  author: morphiq-labs
 ---
 
 ## Pipeline Position

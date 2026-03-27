@@ -1,0 +1,12 @@
+{
+  "name": "morphiq-skills",
+  "description": "AI visibility audit, prioritization, content optimization, and monitoring pipeline. Scan websites for LLM citation readiness, rank issues, build fixes, and track share of voice across AI providers.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Morphiq Labs"
+  },
+  "homepage": "https://github.com/morphiq-labs/morphiq-labs-skills",
+  "repository": "https://github.com/morphiq-labs/morphiq-labs-skills",
+  "license": "Apache-2.0",
+  "keywords": ["ai-visibility", "aeo", "geo", "llm-optimization", "seo", "share-of-voice", "schema-markup", "content-optimization"]
+}

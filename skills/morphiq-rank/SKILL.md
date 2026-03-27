@@ -1,7 +1,9 @@
 ---
-name: Morphiq Rank
+name: morphiq-rank
 description: This skill should be used when the user asks to "create issues from a scan", "prioritize what to fix", "rank the issues", "build a roadmap from scan results", "run Morphiq Rank", or mentions creating a prioritized roadmap from scan results. Consumes a Morphiq Scan Report, applies issue creation criteria with impact/effort weighting, and organizes issues into 4 progressive discovery tiers.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
+  author: morphiq-labs
 ---
 
 ## Pipeline Position

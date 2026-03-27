@@ -1,7 +1,9 @@
 ---
-name: Morphiq Build
+name: morphiq-build
 description: This skill should be used when the user asks to "fix the issues", "optimize existing content", "create new content for AI visibility", "run Morphiq Build", "generate schema markup", "create an llms.txt file", "run the content lab", or mentions building content fixes, generating schema, rewriting content for AI citations, or creating policy files. Consumes a Prioritized Roadmap (or user prompt, or existing content) and produces build artifacts through a 5-step content lab pipeline.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
+  author: morphiq-labs
 ---
 
 ## Pipeline Position
