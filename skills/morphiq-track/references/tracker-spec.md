@@ -18,7 +18,7 @@ Created by morphiq-track on its first run. If the file does not exist when any s
 
 ## Complete File Structure
 
-The tracker has 10 sections. Each section is described below with its format, KPI definitions, and update rules.
+The tracker has 14 sections. Each section is described below with its format, KPI definitions, and update rules.
 
 ```markdown
 # Morphiq Tracker — {domain}
@@ -182,7 +182,7 @@ Last scan: 2025-03-25 | Last track: 2025-03-25 | Runs: 8
 ## Section 5: Share of Voice
 
 ```markdown
-## Share of Voice: 34.2% (+5.6)
+## Share of Voice: 34.2% (+5.6) | Weighted: 28.1% (+4.8) | Influence: 52.0% (+6.0)
 
 | Provider | SoV | Previous | Delta |
 |----------|-----|----------|-------|
@@ -191,6 +191,14 @@ Last scan: 2025-03-25 | Last track: 2025-03-25 | Runs: 8
 | Perplexity | 38.0% | 30.0% | +8.0 |
 | Anthropic | 28.8% | 26.4% | +2.4 |
 | **Aggregate** | **34.2%** | **28.6%** | **+5.6** |
+
+### SoV by Type
+| Metric | Value | Previous | Delta |
+|--------|-------|----------|-------|
+| Mention SoV (standard) | 34.2% | 28.6% | +5.6 |
+| Fanout-Weighted SoV | 28.1% | 23.3% | +4.8 |
+| Influence SoV | 52.0% | 46.0% | +6.0 |
+| Conversion Gap | 17.8pp | 17.4pp | +0.4 |
 ```
 
 ### KPIs
@@ -201,6 +209,9 @@ Last scan: 2025-03-25 | Last track: 2025-03-25 | Runs: 8
 | Per-Provider SoV | SoV broken down by AI provider | Same formula, scoped to one provider's responses |
 | Aggregate SoV | Average across all providers | `mean(provider SoVs)` |
 | SoV Delta | Change since last tracking run | `Current SoV - Previous SoV` |
+| Fanout-Weighted SoV | SoV weighted by fan-out depth per prompt type | `Σ(prompt_type_SoV × fanout_weight) / Σ(fanout_weights)` — see `prompt-taxonomy.md` for weights |
+| Influence SoV | Whether brand appeared in model sub-queries during research | `(prompts where brand in sub-queries / total prompts) × 100` — see `share-of-voice.md` |
+| Conversion Gap | Difference between Influence and Citation SoV | `Influence SoV - Citation SoV` — high gap = brand researched but not cited |
 
 ### Update Rules
 
@@ -450,18 +461,19 @@ This section answers: "Is the content we're creating actually working?" It track
 **Coverage Score: 6/10** (Previous: 4/10, Delta: +2)
 
 ### Unanswered Queries
-| Query | Source Content | Brief Status | Content Created |
-|-------|---------------|-------------|-----------------|
-| widget pricing comparison 2025 | /blog/best-widgets | completed | /blog/pricing-comparison |
-| widget implementation timeline | /blog/best-widgets | pending | — |
-| CRM vs widget integration | /product | pending | — |
+| Query | Source Content | Model Origin | Prompt Type | Brief Status | Content Created |
+|-------|---------------|-------------|-------------|-------------|-----------------|
+| widget pricing comparison 2025 | /blog/best-widgets | GPT-5.4 (site:) | discovery | completed | /blog/pricing-comparison |
+| widget implementation timeline | /blog/best-widgets | GPT-5.4 | use_case | pending | — |
+| CRM vs widget integration | /product | Gemini | comparison | pending | — |
+| widget alternatives 2026 | /product | Gemini | comparison | pending | — |
 
 ### Answered Queries (covered by existing content)
-| Query | Answered By | Cited |
-|-------|------------|-------|
-| what is Example Company | / | yes |
-| Example Company features | /product | yes |
-| how to use widgets | /blog/guide | no |
+| Query | Answered By | Model Origin | Cited | Influence Only |
+|-------|------------|-------------|-------|----------------|
+| what is Example Company | / | all | yes | — |
+| Example Company features | /product | GPT-5.4 (site:) | yes | — |
+| how to use widgets | /blog/guide | Claude | no | yes (GPT-5.4) |
 ```
 
 ### KPIs
@@ -473,10 +485,19 @@ This section answers: "Is the content we're creating actually working?" It track
 | Unanswered Count | Queries with no site content | Count of Unanswered Queries rows |
 | Brief Completion Rate | % of unanswered queries with content created | `(completed briefs / total briefs) * 100` |
 | Fanout Citation Rate | % of answered queries where the site is actually cited | `(Cited=yes / total answered) * 100` |
+| Influence-Only Rate | % of answered queries where the site appears in sub-queries but not final citations | `(Influence Only != — / total answered) * 100` |
+
+### Column Definitions
+
+| Column | Description |
+| --- | --- |
+| Model Origin | Which model generated this sub-query during simulation. `GPT-5.4 (site:)` indicates a `site:` operator query. `all` means all models would generate this sub-query. |
+| Prompt Type | The parent prompt type that triggered this sub-query (determines severity weighting — see `prompt-taxonomy.md`) |
+| Influence Only | When the site appeared in a model's sub-queries but NOT in the final cited response. Indicates conversion potential — the model researched the site but did not cite it. |
 
 ### Purpose
 
-This section tracks the progression from "models would ask this" → "we created content for it" → "models now cite us for it." It connects the diagnostic fanout (Scan) with the generative fanout (Track Workflow C) and measures whether filling query gaps actually results in citations.
+This section tracks the progression from "models would ask this" → "we created content for it" → "models now cite us for it." It connects the diagnostic fanout (Scan) with the generative fanout (Track Workflow C) and measures whether filling query gaps actually results in citations. The Model Origin and Influence Only columns connect this section to the SoV section's invisible SoV tracking — revealing where the site is being researched by models but failing to convert that research into citations.
 
 ### Update Rules
 

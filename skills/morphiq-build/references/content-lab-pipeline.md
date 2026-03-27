@@ -127,7 +127,7 @@ Both paths converge at Step 1.
 **What it does:**
 
 - Analyzes extracted content against the query space (tracked prompts)
-- Identifies four types of gaps:
+- Identifies five types of gaps:
 
 | Gap Type | What's Missing |
 | --- | --- |
@@ -135,9 +135,11 @@ Both paths converge at Step 1.
 | **Data gaps** | Missing statistics, comparisons, quantitative evidence |
 | **Format gaps** | No tables, step-by-steps, FAQs, comparison formats |
 | **Depth gaps** | Surface-level explanations, no expert insight |
+| **Fanout coverage gaps** | Sub-queries AI models would chain about this topic that the site cannot answer |
 
 - Detects comparative intent — checks if prompt contains "vs", "best", "compare", etc.
 - If comparative intent detected → flags "brand positioning gap"
+- Evaluates fanout coverage — checks whether the content addresses the sub-queries models would chain from this topic (see Fanout-Aware Gap Analysis below)
 - Generates up to 5 targeted search queries to fill identified gaps
 
 **Input:** extracted content from Step 2 + tracked prompts + optional ICP **Output:** gap analysis report with research queries
@@ -170,6 +172,28 @@ Both paths converge at Step 1.
   ]
 }
 ```
+
+### Fanout-Aware Gap Analysis
+
+In addition to the standard gap types, Step 3 evaluates whether the content being built or optimized addresses the sub-queries AI models would chain from this topic. The content type determines which sub-queries to target:
+
+**Content type → sub-query generation ruleset:**
+
+| Content Type | Expected Sub-queries | Build Implication |
+| --- | --- | --- |
+| **Pricing page** | GPT-5.4 chains `site:domain.com` queries for pricing + features per competitor | Ensure per-plan feature breakdown, comparison table with competitors, pricing FAQs |
+| **Blog post (category)** | Triggers discovery fan-out (avg 7.5 sub-queries) — landscape, per-entity, alternatives | Generate content that answers 7+ sub-queries, not just the headline topic |
+| **Blog post (technical)** | Triggers technical_eval fan-out (avg 11 sub-queries) — per-platform verification | Include per-platform comparisons, benchmarks, implementation details |
+| **Comparison page** | Always decomposes per-entity across all models | Ensure every entity in the comparison has dedicated coverage and data |
+| **Product page** | Triggers feature decomposition — each capability searched individually | Each feature should be addressable as a standalone retrievable section |
+| **Docs/guide page** | Triggers implementation step verification | Each step must be self-contained and answer the specific how-to sub-query |
+
+**`site:` operator implication:** GPT-5.4 heavily uses `site:domain.com` queries to verify claims directly on company websites. Content must be structured so these site-specific queries find authoritative answers. This means:
+
+- Key topics must live on dedicated, appropriately-typed pages (pricing on /pricing, features on /product)
+- Internal linking between related pages strengthens `site:` query matches
+- Pages should include the exact terminology GPT-5.4 appends to `site:` queries: "pricing", "features", "official", year markers
+- If the content being built targets a topic that GPT-5.4 would `site:`-search for, the page URL and title should clearly match that topic
 
 For the full gap taxonomy, read `references/gap-taxonomy.md`.
 
@@ -307,7 +331,7 @@ After the 5-step pipeline completes, morphiq-build runs additional processing:
 - Open Graph tags
 - See `references/metadata-patterns.md` for rules
 
-**llms.txt Scaffolding** (`scripts/generate-llms-txt.sh`):
+**llms.txt Scaffolding** (`scripts/generate-llms-txt.py`):
 
 - If building for a full site, generates llms.txt from sitemap
 - See `references/llms-txt-spec.md` for the spec
@@ -317,6 +341,13 @@ After the 5-step pipeline completes, morphiq-build runs additional processing:
 - Fixes heading hierarchy violations
 - Splits oversized paragraphs
 - Reorders sections for retrieval optimization
+
+**Internal Linking for `site:` Query Coverage:**
+
+- For each piece of content, identify related pages on the same domain that GPT-5.4 would target with `site:` queries
+- Add internal links between the built content and those related pages (pricing ↔ product, comparison ↔ individual entity pages, blog ↔ docs)
+- Ensure anchor text uses the terminology models inject into `site:` queries ("pricing", "features", "official", year markers)
+- This strengthens the site's ability to answer `site:domain.com [topic]` queries by creating discoverable paths between related content
 
 **Enrichment Pass** (`scripts/enrich-content.py`):
 

@@ -169,27 +169,82 @@ morphiq-scan produces a **scan report** — a full AI visibility audit of one do
   },
   "query_fanout": {
     "simulated_queries": [
-      "What does Example Company do?",
-      "Example Company pricing",
-      "Example Company vs competitors",
-      "Is Example Company good for enterprise?",
-      "Example Company reviews"
+      {
+        "query": "What does Example Company do?",
+        "model": "all",
+        "prompt_type": "brand",
+        "citation_weight": "silent",
+        "page_type_source": "homepage"
+      },
+      {
+        "query": "Example Company pricing",
+        "model": "gpt-5.4",
+        "prompt_type": "category",
+        "citation_weight": "citation_producing",
+        "page_type_source": "pricing"
+      },
+      {
+        "query": "site:example.com pricing official",
+        "model": "gpt-5.4",
+        "prompt_type": "category",
+        "citation_weight": "site_targeted",
+        "page_type_source": "pricing"
+      },
+      {
+        "query": "Example Company vs Competitor A features 2026",
+        "model": "gemini",
+        "prompt_type": "comparison",
+        "citation_weight": "citation_producing",
+        "page_type_source": "product"
+      },
+      {
+        "query": "Example Company alternatives 2026",
+        "model": "gemini",
+        "prompt_type": "comparison",
+        "citation_weight": "citation_producing",
+        "page_type_source": null
+      }
     ],
+    "fanout_depth": {
+      "total_subqueries": 12,
+      "by_model": {
+        "gpt-5.4": 5,
+        "claude": 2,
+        "gemini": 5
+      },
+      "by_prompt_type": {
+        "brand": 2,
+        "category": 4,
+        "comparison": 6
+      }
+    },
     "coverage_score": 6,
     "gaps": [
       "No pricing page or structured pricing content found",
-      "No comparison content addressing competitor queries"
+      "No comparison content addressing competitor queries",
+      "No alternative-to content for Gemini exposure"
     ],
     "suggested_content": [
       {
         "query": "Example Company vs competitors",
+        "model_origin": "all",
+        "prompt_type": "comparison",
         "suggestion": "Create a comparison page addressing top competitor queries",
         "rationale": "LLMs chain comparison queries when users ask about alternatives — no content exists to be cited"
       },
       {
         "query": "Example Company pricing",
+        "model_origin": "gpt-5.4",
+        "prompt_type": "category",
         "suggestion": "Add structured pricing page with plan details",
-        "rationale": "Pricing queries are high-intent — models currently have no source to cite for this"
+        "rationale": "GPT-5.4 issues site:example.com pricing queries — explicit gap with 2x citation weight"
+      },
+      {
+        "query": "Example Company alternatives 2026",
+        "model_origin": "gemini",
+        "prompt_type": "comparison",
+        "suggestion": "Create alternative-to content for top competitors",
+        "rationale": "Gemini uniquely searches '[Brand] alternatives' for every entity — defensive content needed"
       }
     ]
   }
@@ -224,11 +279,22 @@ morphiq-scan produces a **scan report** — a full AI visibility audit of one do
 | `pages[].meta` | object | yes | Page metadata extracted |
 | `policy_files` | object | yes | robots.txt and llms.txt audit |
 | `query_fanout` | object | yes | Simulated AI query coverage analysis |
-| `query_fanout.simulated_queries` | string\[\] | yes | The sub-questions an LLM would generate |
-| `query_fanout.coverage_score` | integer (0-10) | yes | How well the site answers these |
+| `query_fanout.simulated_queries[]` | array | yes | Sub-queries models would generate, with per-query metadata |
+| `query_fanout.simulated_queries[].query` | string | yes | The sub-query text |
+| `query_fanout.simulated_queries[].model` | string | yes | Which model generates this (`gpt-5.4`, `claude`, `gemini`, `all`) |
+| `query_fanout.simulated_queries[].prompt_type` | string | yes | Parent prompt type (determines severity weighting) |
+| `query_fanout.simulated_queries[].citation_weight` | enum | yes | `citation_producing` (1.5x), `silent` (0.5x), `site_targeted` (2x) |
+| `query_fanout.simulated_queries[].page_type_source` | string/null | yes | Page type that would answer this sub-query |
+| `query_fanout.fanout_depth` | object | yes | Fan-out depth metadata |
+| `query_fanout.fanout_depth.total_subqueries` | integer | yes | Total simulated sub-queries across all models |
+| `query_fanout.fanout_depth.by_model` | object | yes | Sub-query count per model |
+| `query_fanout.fanout_depth.by_prompt_type` | object | yes | Sub-query count per prompt type |
+| `query_fanout.coverage_score` | integer (0-10) | yes | Weighted coverage score per `query-fanout.md` rubric |
 | `query_fanout.gaps` | string\[\] | yes | Queries the site cannot answer |
-| `query_fanout.suggested_content` | array | yes | Content creation suggestions derived from unanswered queries |
+| `query_fanout.suggested_content[]` | array | yes | Content creation suggestions derived from unanswered queries |
 | `query_fanout.suggested_content[].query` | string | yes | The unanswered query |
+| `query_fanout.suggested_content[].model_origin` | string | yes | Which model generated this sub-query |
+| `query_fanout.suggested_content[].prompt_type` | string | yes | Parent prompt type |
 | `query_fanout.suggested_content[].suggestion` | string | yes | What content to create |
 | `query_fanout.suggested_content[].rationale` | string | yes | Why models would ask this and why it matters |
 
@@ -656,14 +722,23 @@ This report loops back to morphiq-rank as supplementary input for re-prioritizat
   "providers_queried": ["openai", "gemini", "perplexity", "anthropic"],
   "prompt_count": 25,
   "share_of_voice": {
-    "current": 34.2,
-    "previous": 28.6,
-    "delta": 5.6,
+    "mention_sov": { "current": 34.2, "previous": 28.6, "delta": 5.6 },
+    "fanout_weighted_sov": { "current": 28.1, "previous": 23.3, "delta": 4.8 },
+    "influence_sov": { "current": 52.0, "previous": 46.0, "delta": 6.0 },
+    "conversion_gap": 17.8,
     "breakdown": {
       "openai": { "current": 40.0, "previous": 32.0, "delta": 8.0 },
       "gemini": { "current": 30.0, "previous": 26.0, "delta": 4.0 },
       "perplexity": { "current": 38.0, "previous": 30.0, "delta": 8.0 },
       "anthropic": { "current": 28.8, "previous": 26.4, "delta": 2.4 }
+    }
+  },
+  "subquery_brand_appearances": {
+    "total_prompts_with_brand_in_subqueries": 13,
+    "total_prompts": 25,
+    "by_provider": {
+      "openai": { "appeared_in_subqueries": 8, "total": 25 },
+      "anthropic": { "appeared_in_subqueries": 5, "total": 25 }
     }
   },
   "citations": {
@@ -744,11 +819,15 @@ This report loops back to morphiq-rank as supplementary input for re-prioritizat
 | `is_baseline` | boolean | yes | True if this is the first run (no delta) |
 | `providers_queried` | string\[\] | yes | Which AI providers were queried |
 | `prompt_count` | integer | yes | Total prompts fired |
-| `share_of_voice` | object | yes | SoV calculation: (company mentions / total mentions) x 100 |
-| `share_of_voice.current` | float | yes | Current run SoV percentage |
-| `share_of_voice.previous` | float/null | yes | Previous run SoV (null if baseline) |
-| `share_of_voice.delta` | float/null | yes | Change in SoV |
+| `share_of_voice` | object | yes | Multi-tier SoV calculation |
+| `share_of_voice.mention_sov` | object | yes | Standard SoV: `(mentions / total) × 100` with current/previous/delta |
+| `share_of_voice.fanout_weighted_sov` | object | yes | SoV weighted by fan-out depth per prompt type (see `prompt-taxonomy.md`) |
+| `share_of_voice.influence_sov` | object | yes | Whether brand appeared in model sub-queries during research (see `share-of-voice.md`) |
+| `share_of_voice.conversion_gap` | float | yes | `influence_sov.current - mention_sov.current` — high = researched but not cited |
 | `share_of_voice.breakdown` | object | yes | Per-provider SoV |
+| `subquery_brand_appearances` | object | no | Sub-query level brand tracking (invisible SoV data) |
+| `subquery_brand_appearances.total_prompts_with_brand_in_subqueries` | integer | no | Prompts where brand appeared in any sub-query |
+| `subquery_brand_appearances.by_provider` | object | no | Per-provider sub-query brand presence |
 | `citations` | object | yes | URL-level citation tracking |
 | `citations.gained[]` | array | yes | New citations since last run |
 | `citations.lost[]` | array | yes | Citations that disappeared |
@@ -757,7 +836,7 @@ This report loops back to morphiq-rank as supplementary input for re-prioritizat
 | `mentions.by_prompt_type` | object | yes | Breakdown by prompt category |
 | `competitor_mentions[]` | array | no | Competitor tracking if configured |
 | `flagged_actions[]` | array | yes | Suggested next actions based on deltas |
-| `flagged_actions[].type` | enum | yes | `citation_opportunity`, `citation_loss`, `sov_drop`, `competitor_gain` |
+| `flagged_actions[].type` | enum | yes | `citation_opportunity`, `citation_loss`, `sov_drop`, `competitor_gain`, `conversion_gap` |
 | `flagged_actions[].suggested_issue_id` | string | no | Issue ID format for feeding back to morphiq-rank |
 | `content_creation_queue[]` | array | yes | Content briefs from query fanout (Workflow C) |
 | `content_creation_queue[].brief_id` | string | yes | Unique brief identifier |

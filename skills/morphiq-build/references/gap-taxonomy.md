@@ -115,6 +115,34 @@ Only applies when comparative intent is detected AND brand context is provided.
 - Ensure comparison table lists the brand first
 - Ensure TL;DR recommends the brand with data-backed rationale
 
+### Fanout Coverage Gap
+
+Missing content for sub-queries that AI models would chain about the site's topics. Structurally different from other gap types — these are **topical coverage gaps** where the fix is typically to create new content, not improve existing content.
+
+**Detection signals:**
+
+- Simulated sub-query from Scan or Track's fanout analysis has no matching page on the site
+- A high-fanout prompt type (technical_eval, discovery) generates sub-queries the site cannot answer
+- GPT-5.4 `site:domain.com` simulation returns no relevant page for a core topic
+- Gemini's "[Brand] alternatives" query has no corresponding content
+- Comparison content mentions entities but no dedicated entity pages exist
+
+**Examples:**
+
+- "best CRM tools 2026" triggers sub-queries for "CRM pricing comparison," "CRM for small business," "CRM implementation timeline" — the site covers CRM tools but has no pricing comparison page
+- GPT-5.4 searches `site:example.com pricing` and finds nothing — the site has no structured pricing page
+- Gemini searches "Example Company alternatives 2026" — no alternative-to content exists
+
+**Severity guide:**
+
+- **High**: Sub-query from a high-fanout prompt type (technical_eval, discovery — avg 7–11 fan-outs) AND the sub-query is citation-producing (pricing, comparison, features); OR GPT-5.4 `site:` query finds no matching page
+- **Medium**: Sub-query from a medium-fanout prompt type (comparison, recommendation) OR the sub-query covers an adjacent topic
+- **Low**: Sub-query from a low-fanout prompt type (use_case, problem_seeking) OR the sub-query is informational/silent (definitions, background)
+
+**Resolution action:** Create a new page targeting the unanswered sub-query, or expand an existing page to cover the missing sub-topic. For `site:` gaps, ensure the content is on a page type that matches the query intent (pricing on a pricing page, features on a product page). For "alternatives" gaps, create alternative-to comparison content.
+
+---
+
 ## Gap Analysis Output Format
 
 For each identified gap, produce:
