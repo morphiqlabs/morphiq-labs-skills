@@ -2,7 +2,7 @@
 
 ## Overview
 
-The four Morphiq skills form a sequential pipeline. Each skill produces structured JSON output that the next skill consumes as input. This document defines the exact data contracts between them.
+The four Morphiq skills form a sequential pipeline. Each skill produces structured JSON output that the next skill consumes as input. This document defines the user-facing skill flow, the workflows each skill supports, and the exact data contracts between them.
 
 ```
 morphiq-scan → morphiq-rank → morphiq-build → morphiq-track
@@ -12,7 +12,65 @@ morphiq-scan → morphiq-rank → morphiq-build → morphiq-track
 
 ---
 
-## 1. morphiq-scan → morphiq-rank
+## Skill Flow
+
+Users download the Morphiq skills from skills.sh and invoke them in Claude Code.
+
+### Initial Audit
+
+The user triggers the full audit-to-issue pipeline in a single instruction:
+
+> "Use Morphiq Scan to audit the entire website, then use Morphiq Rank to create the issues."
+
+This runs two skills sequentially:
+
+1. **morphiq-scan** audits the domain across all evaluation categories, scores it on a 100-point rubric, and outputs a Scan Report.
+2. **morphiq-rank** consumes the Scan Report, creates prioritized issues with accurate references, and outputs a Prioritized Roadmap.
+
+The user reviews the issues. When ready to fix:
+
+> "Use Morphiq Build to fix the issues."
+
+3. **morphiq-build** consumes the Prioritized Roadmap and produces build artifacts — the actual content, schema, and policy files that resolve each issue.
+
+### Ongoing Workflows
+
+After the initial audit and build cycle, **morphiq-track** drives three ongoing workflows:
+
+> "Use Morphiq Track to run a tracking cycle."
+
+4. **morphiq-track** generates `MORPHIQ-TRACKER.md` — the persistent state file that records scores, issues, SoV deltas, prompts, competitors, and content creation queues. This file is updated every run and serves as input for all downstream workflows.
+
+From the tracker, users invoke specific workflows:
+
+> "Use Morphiq Build to optimize existing content." (Content Optimization)
+> "Use Morphiq Build to create new content." (Content Creation)
+
+---
+
+## 1. morphiq-scan
+
+### Workflow
+
+morphiq-scan performs a full AI visibility audit of one domain. It evaluates every page (including blogs) across five categories:
+
+**1. Content Quality (20 points)**
+Evaluates E-E-A-T signals, clear titles, TL;DR summaries, statistics/citations, and examples. Applies to all pages including blog posts. Scored per reference: `content-quality.md`.
+
+**2. Agentic Readiness / Content Structure (45 points)**
+Evaluates JSON-LD schema, semantic HTML, heading hierarchy, metadata, canonical URLs, Open Graph tags, and structured data. Checks whether AI agents can extract facts from the page. Applies to all pages including blog posts.
+
+**3. Chunking & Retrieval (15 points)**
+Evaluates ease of chunking and retrieval by LLMs: heading hierarchy as semantic boundaries, section scope, paragraph self-containment, answer-first structure, retrieval vocabulary, and FAQ presence. Applies to all pages including blog posts. Scored per reference: `chunking-retrieval.md`.
+
+**4. Policy Files (10 points)**
+Scans for `robots.txt` and `llms.txt` at the domain root. Checks whether AI crawlers (GPTBot, Google-Extended, etc.) are allowed or blocked. Checks whether `llms.txt` exists and follows the spec.
+
+**5. Query Fanout (10 points) — Diagnostic**
+Simulates the chain-of-thought queries an LLM would generate about the company, its products, and its content. Checks whether the site has pages that answer each sub-query. Identifies coverage gaps — queries the site cannot answer. Also suggests content creations based on what models would likely ask given the existing content and prompts.
+
+**Scoring**
+After evaluating all categories, morphiq-scan applies the 100-point scoring rubric (`scoring-rubric.md`) to produce the overall score and per-category breakdowns. The Scan Report with all scores and issues is then passed as input to morphiq-rank.
 
 ### Contract: Scan Report
 
@@ -121,6 +179,18 @@ morphiq-scan produces a **scan report** — a full AI visibility audit of one do
     "gaps": [
       "No pricing page or structured pricing content found",
       "No comparison content addressing competitor queries"
+    ],
+    "suggested_content": [
+      {
+        "query": "Example Company vs competitors",
+        "suggestion": "Create a comparison page addressing top competitor queries",
+        "rationale": "LLMs chain comparison queries when users ask about alternatives — no content exists to be cited"
+      },
+      {
+        "query": "Example Company pricing",
+        "suggestion": "Add structured pricing page with plan details",
+        "rationale": "Pricing queries are high-intent — models currently have no source to cite for this"
+      }
     ]
   }
 }
@@ -157,6 +227,10 @@ morphiq-scan produces a **scan report** — a full AI visibility audit of one do
 | `query_fanout.simulated_queries` | string\[\] | yes | The sub-questions an LLM would generate |
 | `query_fanout.coverage_score` | integer (0-10) | yes | How well the site answers these |
 | `query_fanout.gaps` | string\[\] | yes | Queries the site cannot answer |
+| `query_fanout.suggested_content` | array | yes | Content creation suggestions derived from unanswered queries |
+| `query_fanout.suggested_content[].query` | string | yes | The unanswered query |
+| `query_fanout.suggested_content[].suggestion` | string | yes | What content to create |
+| `query_fanout.suggested_content[].rationale` | string | yes | Why models would ask this and why it matters |
 
 ### Issue ID Convention
 
@@ -171,10 +245,25 @@ Examples:
 - `content-thin-faq` — No or insufficient FAQ content
 - `policy-blocks-gptbot` — robots.txt blocks GPTBot
 - `chunking-long-paragraphs` — Paragraphs exceed retrieval-friendly length
+- `fanout-no-comparison-content` — No content for competitor comparison queries
+- `fanout-no-pricing-content` — No structured pricing content for pricing queries
 
 ---
 
-## 2. morphiq-rank → morphiq-build
+## 2. morphiq-rank
+
+### Workflow
+
+morphiq-rank consumes the Scan Report and creates the issues that the user needs to fix. It does not just list them — it applies issue creation criteria with accurate references:
+
+1. **Reads the Scan Report** — all issues, scores, and query fanout gaps
+2. **Calculates impact scores** — weights each issue by how much it affects AI visibility (not just severity, but which pages and categories it affects)
+3. **Estimates effort** — low/medium/high based on the type of fix
+4. **Organizes into progressive discovery tiers** — Foundation → Structure → Content → Optimization
+5. **Sets dependency ordering** — some issues must be resolved before others make sense (e.g., fix schema before adding FAQ that references schema)
+6. **Outputs the Prioritized Roadmap** with every issue as an actionable item the user can work through
+
+Each action in the roadmap includes: the original issue ID, the affected URLs, the remediation instruction, and what it depends on. This is the user's fix list.
 
 ### Contract: Prioritized Roadmap
 
@@ -313,16 +402,28 @@ morphiq-rank consumes the scan report and produces a **prioritized roadmap** —
 
 ---
 
-## 3. morphiq-build → morphiq-track
+## 3. morphiq-build
 
-### Contract: Build Output
+### Workflow
 
-morphiq-build consumes the prioritized roadmap and produces **build artifacts** — the actual content, schema, and policy files created or rewritten.
+morphiq-build fixes the issues generated by morphiq-rank. It consumes the Prioritized Roadmap and produces build artifacts — the actual content, schema, and policy files that resolve each issue.
 
 morphiq-build has two entry points that converge to the same output format:
 
-- **From prompt**: User describes what to create → pipeline generates it
-- **From existing content**: Existing content ingested → analyzed → enriched → rewritten as final optimized output
+- **From prompt** (Content Creation workflow): User describes what to create, or content creation briefs from the tracker are used → content lab pipeline generates it
+- **From existing content** (Content Optimization workflow): Existing content is ingested → analyzed for gaps → enriched → rewritten as final optimized output
+
+Both entry points run through the 5-step content lab pipeline (`content-lab-pipeline.md`):
+
+1. **Ingest Sources** — URL validation, deduplication, fetch content
+2. **Extract Content** — HTML to markdown conversion, structure preservation
+3. **Analyze Gaps** — Identify content, data, format, and depth gaps (`gap-taxonomy.md`)
+4. **Research to Fill Gaps** — Live web search for statistics, citations, expert quotes (`enrichment-sources.md`)
+5. **Generate/Rewrite** — Apply content quality standards, metadata optimization, schema injection
+
+Post-pipeline: FAQs (`faq-guidelines.md`), metadata (`metadata-patterns.md`), JSON-LD schema (`schema-templates.md`), `llms.txt` generation (`llms-txt-spec.md`).
+
+### Contract: Build Output
 
 ```json
 {
@@ -459,7 +560,84 @@ morphiq-build has two entry points that converge to the same output format:
 
 ---
 
-## 4. morphiq-track → morphiq-rank (Loop)
+## 4. morphiq-track
+
+### Workflow
+
+morphiq-track is the measurement and flywheel skill. It generates and maintains `MORPHIQ-TRACKER.md` — the persistent state file that every subsequent run reads and updates. The tracker stores scores, open issues, SoV deltas, prompt results, competitor data, and content creation queues.
+
+morphiq-track drives three distinct workflows:
+
+### Workflow A: Content Optimization
+
+**Trigger:** User has existing website content (pages, blog posts) that needs AI visibility enrichment.
+
+**What it does:**
+1. Reads `MORPHIQ-TRACKER.md` for current state — open issues, scores, previous deltas
+2. Takes existing content and runs it through the 5-step content lab pipeline (via morphiq-build, entry point: `existing_content`)
+3. Does NOT re-process the original input sources — only enriches the content itself (adds citations, restructures for chunking, improves E-E-A-T signals, injects schema)
+4. Updates `MORPHIQ-TRACKER.md` with resolved issues, new scores
+
+**Flow:**
+```
+MORPHIQ-TRACKER.md (current state)
+  → identify pages with open issues
+  → morphiq-build (entry: existing_content)
+  → 5-step content lab pipeline (enrich only, not re-ingest)
+  → artifacts produced
+  → MORPHIQ-TRACKER.md updated (issues marked resolved)
+```
+
+### Workflow B: Content Creation
+
+**Trigger:** User wants to create new content to fill gaps identified by scan or tracking.
+
+**What it does:**
+1. Reads `MORPHIQ-TRACKER.md` for current blog posts, tracked prompts, and content creation queue
+2. Runs `create-prompts.py` — generates prompts derived from existing content, tracked queries, and query fanout gaps
+3. Runs `run-queries.py` — executes prompts against LLM providers (OpenAI, Gemini, Perplexity, Anthropic) to gather input
+4. Stores results in `MORPHIQ-TRACKER.md` — prompt results, model outputs, competitor mentions, citation data
+5. Takes the gathered input (existing sources + prompt results) and runs it through the 5-step content lab pipeline (via morphiq-build, entry point: `prompt`)
+6. Updates `MORPHIQ-TRACKER.md` with new content entries, updated SoV, new baselines
+
+**Flow:**
+```
+MORPHIQ-TRACKER.md (current state + existing blog posts)
+  → create-prompts.py (generate prompts from content + gaps)
+  → run-queries.py (execute against LLM providers)
+  → store results in MORPHIQ-TRACKER.md (prompts, competitors, deltas)
+  → morphiq-build (entry: prompt, with gathered sources)
+  → 5-step content lab pipeline (full creation)
+  → artifacts produced
+  → MORPHIQ-TRACKER.md updated (new content tracked, SoV baselines set)
+```
+
+### Workflow C: Query Fanout Content Generation
+
+**Trigger:** User wants to expand content coverage by creating sub-content derived from existing content's query chains.
+
+**What it does:**
+For each existing piece of content (blog post, product page), morphiq-track:
+
+1. Identifies the prompt or topic that the content addresses
+2. Simulates the query fanout — the sub-queries a model would chain when a user asks that prompt (e.g., if the blog is about "best CRM tools," models would chain: "CRM pricing comparison," "CRM for small business," "CRM implementation timeline," etc.)
+3. Checks whether the site already has content answering each sub-query
+4. For unanswered sub-queries, creates content creation briefs
+5. Each brief enters the content creation queue in `MORPHIQ-TRACKER.md`
+6. When the user triggers content creation, these briefs flow through Workflow B (create-prompts → run-queries → content lab pipeline)
+
+**Flow:**
+```
+Existing content (blogs, pages)
+  → for each piece: derive sub-queries models would chain
+  → check site coverage for each sub-query
+  → unanswered sub-queries → content creation briefs
+  → briefs added to MORPHIQ-TRACKER.md content creation queue
+  → user triggers Workflow B → briefs become new content
+  → MORPHIQ-TRACKER.md updated
+```
+
+**Key distinction from Scan's query fanout:** Scan performs diagnostic fanout at the site level ("can the site answer what models would ask about this company?"). Track performs generative fanout at the per-content level ("for this specific blog post, what follow-up queries would models chain, and should we create content for them?"). Scan identifies the gap. Track fills it.
 
 ### Contract: Delta Report
 
@@ -537,6 +715,16 @@ This report loops back to morphiq-rank as supplementary input for re-prioritizat
       "suggested_issue_id": "content-no-comparison"
     }
   ],
+  "content_creation_queue": [
+    {
+      "brief_id": "brief-001",
+      "source_content": "https://example.com/blog/best-widgets",
+      "derived_query": "widget pricing comparison 2025",
+      "rationale": "Sub-query chained from 'best widgets for teams' — no site content answers this",
+      "status": "pending",
+      "created_at": "2025-03-25"
+    }
+  ],
   "raw_results": {
     "storage": "morphiq-track/results/track-2025-03-25.json",
     "format": "Per-provider raw responses stored separately for audit"
@@ -571,6 +759,13 @@ This report loops back to morphiq-rank as supplementary input for re-prioritizat
 | `flagged_actions[]` | array | yes | Suggested next actions based on deltas |
 | `flagged_actions[].type` | enum | yes | `citation_opportunity`, `citation_loss`, `sov_drop`, `competitor_gain` |
 | `flagged_actions[].suggested_issue_id` | string | no | Issue ID format for feeding back to morphiq-rank |
+| `content_creation_queue[]` | array | yes | Content briefs from query fanout (Workflow C) |
+| `content_creation_queue[].brief_id` | string | yes | Unique brief identifier |
+| `content_creation_queue[].source_content` | string | yes | URL of the content that generated this brief |
+| `content_creation_queue[].derived_query` | string | yes | The sub-query to create content for |
+| `content_creation_queue[].rationale` | string | yes | Why this sub-query matters |
+| `content_creation_queue[].status` | enum | yes | `pending`, `in_progress`, `completed` |
+| `content_creation_queue[].created_at` | string | yes | ISO date when brief was created |
 | `raw_results` | object | yes | Pointer to raw provider response data |
 
 ### Baseline Run Behavior
@@ -591,45 +786,208 @@ When morphiq-track output is fed back to morphiq-rank:
 2. Citation losses trigger severity escalation of related existing issues
 3. SoV drops trigger re-prioritization of the affected prompt type categories
 4. The rank skill merges these with any existing scan report issues
+5. `content_creation_queue` briefs with `status: pending` are surfaced as content gap issues
+
+---
+
+## 5. MORPHIQ-TRACKER.md
+
+### Purpose
+
+`MORPHIQ-TRACKER.md` is the persistent state file that lives in the user's project root. Every skill reads it, every skill writes to it. It is the shared state that makes the pipeline loop work without requiring a database or external service.
+
+It is generated by morphiq-track on first run and updated on every subsequent run of any skill.
+
+### Full Specification
+
+The complete tracker specification — all 14 sections, KPI definitions, calculation formulas, and per-skill update rules — is defined in:
+
+> `morphiq-track/references/tracker-spec.md`
+
+### Sections Overview
+
+| # | Section | What it tracks | Primary owner |
+| --- | --- | --- | --- |
+| 1 | Score Summary | Aggregate score + run counts | morphiq-scan |
+| 2 | Score Breakdown by Category | Per-category scores with deltas | morphiq-scan |
+| 3 | Open Issues | All unresolved issues with status | morphiq-scan, morphiq-build |
+| 4 | Resolved Issues | Fixed issues with verification status | morphiq-build, morphiq-scan |
+| 5 | Share of Voice | Current SoV per provider | morphiq-track |
+| 6 | SoV Trend | Historical SoV across all runs | morphiq-track |
+| 7 | Citation Analytics | Gained/lost/stable citations + history | morphiq-track |
+| 8 | Tracked Prompts | All prompts with mention/citation status | morphiq-track |
+| 9 | Competitors | Competitor mentions, SoV, trends | morphiq-track |
+| 10 | Per-Page Performance | Per-URL scores, citations, issues | morphiq-scan, morphiq-track |
+| 11 | Content Performance | Whether built artifacts get cited | morphiq-build, morphiq-track |
+| 12 | Query Fanout Coverage | Coverage score progression + brief tracking | morphiq-scan, morphiq-track |
+| 13 | Content Creation Queue | Briefs from query fanout with status | morphiq-track, morphiq-build |
+| 14 | Run History | Every pipeline run with snapshot data | all skills |
+
+### What Each Skill Does to the Tracker
+
+| Skill | Reads | Writes |
+| --- | --- | --- |
+| morphiq-scan | Previous scores, previous issues | Refreshes scores (sections 1-2), refreshes issue list (3-4), refreshes per-page performance (10), refreshes query fanout coverage (12), appends run history (14) |
+| morphiq-rank | Issue list, scores | Reorders issue priorities (3), appends run history (14) |
+| morphiq-build | Open issues, content creation queue | Marks issues resolved (3→4), adds content performance entries (11), updates content creation queue (13), appends run history (14) |
+| morphiq-track | Everything | Updates SoV (5-6), citation analytics (7), tracked prompts (8), competitors (9), per-page citations (10), content citation status (11), query fanout coverage (12), content creation queue (13), appends run history (14) |
+
+### State Management
+
+- **Each run appends** to run history and updates the sections that skill owns
+- **Git provides the full audit trail** — every change to the tracker is a commit, so `git log MORPHIQ-TRACKER.md` shows the complete history
+- **The scan is always the source of truth** — if the tracker and reality diverge (user edited the site outside the skill), the next scan refreshes the issue list and scores
+- **Stale tracker is fine** — users re-scan when they're ready; the system is on-demand, not a daemon
+- **Regressions are detected** — if a resolved issue reappears on re-scan, it moves back to Open Issues with status `regressed`
 
 ---
 
 ## Data Flow Summary
 
 ```
-┌─────────────┐     Scan Report       ┌──────────────┐
-│ morphiq-scan│  ──────────────────→  │ morphiq-rank │
-└─────────────┘     (JSON, ~50KB)     └──────┬───────┘
+INITIAL AUDIT
+==============
+
+  User: "Use Morphiq Scan to audit the website, then use Morphiq Rank to create the issues"
+
+  ┌─────────────┐     Scan Report       ┌──────────────┐
+  │ morphiq-scan │  ──────────────────→  │ morphiq-rank │
+  │              │     (JSON, ~50KB)     │              │
+  │ 5 categories │                       │ 4 tiers      │
+  │ 100pt rubric │                       │ impact/effort│
+  └─────────────┘                        └──────┬───────┘
+                                                │
+                                       Prioritized Roadmap
+                                         (JSON, ~20KB)
+                                                │
+                                                ▼
+                                          User reviews issues
+
+
+FIX ISSUES
+===========
+
+  User: "Use Morphiq Build to fix the issues"
+
+                                       Prioritized Roadmap
+                                                │
+                                                ▼
+                              ┌───────────────────────────────────┐
+                              │          morphiq-build            │
+                              │                                   │
+                              │  5-step content lab pipeline      │
+                              │  → artifacts (content, schema,    │
+                              │    policy files, metadata)        │
+                              └──────────────┬────────────────────┘
                                              │
-                                    Prioritized Roadmap
-                                      (JSON, ~20KB)
-                                             │
-                                             ▼
-                            ┌───────────────────────────────────┐
-                            │          morphiq-build            │
-                            │                                   │
-                            │  Entry A: prompt → generate       │
-                            │  Entry B: content → pipeline →    │
-                            │           rewrite final output    │
-                            └──────────────┬────────────────────┘
-                                           │
-                                     Build Output
-                                    (JSON, ~100KB)
-                                           │
-                                           ▼
-                            ┌───────────────────────────┐
-                            │      morphiq-track        │
-                            │                           │
-                            │  Queries: OpenAI, Gemini, │
-                            │  Perplexity, Anthropic    │
-                            └──────────────┬────────────┘
-                                           │
-                                      Delta Report
-                                     (JSON, ~30KB)
-                                           │
-                                           ▼
-                                  Back to morphiq-rank
-                                  (supplementary input)
+                                       Build Output
+                                      (JSON, ~100KB)
+
+
+ONGOING: CONTENT OPTIMIZATION (Workflow A)
+===========================================
+
+  User: "Use Morphiq Build to optimize existing content"
+
+  MORPHIQ-TRACKER.md (current state)
+        │
+        ▼
+  Identify pages with open issues
+        │
+        ▼
+  morphiq-build (entry: existing_content)
+        │
+        ▼
+  5-step pipeline (enrich only)
+        │
+        ▼
+  MORPHIQ-TRACKER.md updated (issues resolved)
+
+
+ONGOING: CONTENT CREATION (Workflow B)
+=======================================
+
+  User: "Use Morphiq Build to create new content"
+
+  MORPHIQ-TRACKER.md + existing blog posts
+        │
+        ▼
+  create-prompts.py (generate prompts from content + gaps)
+        │
+        ▼
+  run-queries.py (execute against OpenAI, Gemini, Perplexity, Anthropic)
+        │
+        ▼
+  Store results in MORPHIQ-TRACKER.md (prompts, competitors, deltas)
+        │
+        ▼
+  morphiq-build (entry: prompt, with gathered sources)
+        │
+        ▼
+  5-step content lab pipeline (full creation)
+        │
+        ▼
+  MORPHIQ-TRACKER.md updated (new content tracked, SoV baselines)
+
+
+ONGOING: QUERY FANOUT EXPANSION (Workflow C)
+=============================================
+
+  Existing content (blogs, pages)
+        │
+        ▼
+  For each piece: derive sub-queries models would chain
+        │
+        ▼
+  Check site coverage for each sub-query
+        │
+        ▼
+  Unanswered sub-queries → content creation briefs
+        │
+        ▼
+  Briefs added to MORPHIQ-TRACKER.md content creation queue
+        │
+        ▼
+  User triggers Workflow B → briefs become new content
+
+
+MEASUREMENT LOOP
+=================
+
+  User: "Use Morphiq Track to run a tracking cycle"
+
+  ┌───────────────────────────┐
+  │      morphiq-track        │
+  │                           │
+  │  Queries: OpenAI, Gemini, │
+  │  Perplexity, Anthropic    │
+  └──────────────┬────────────┘
+                 │
+            Delta Report
+           (JSON, ~30KB)
+                 │
+                 ├──→ MORPHIQ-TRACKER.md updated
+                 │
+                 └──→ Back to morphiq-rank
+                      (supplementary input for re-prioritization)
+
+
+RE-AUDIT (after user edits outside the skill)
+===============================================
+
+  User makes changes → runs Morphiq Scan again
+        │
+        ▼
+  New scan detects current site state
+        │
+        ▼
+  MORPHIQ-TRACKER.md refreshed (new scores, updated issues)
+        │
+        ▼
+  morphiq-rank re-prioritizes
+        │
+        ▼
+  Cycle continues
 ```
 
 ## Versioning

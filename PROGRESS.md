@@ -27,7 +27,7 @@ Last updated: 2026-03-26
 ### SKILL.md
 | File | Status |
 |------|--------|
-| SKILL.md | [~] Placeholder — needs frontmatter + workflow instructions |
+| SKILL.md | [~] Frontmatter + pipeline position done — needs workflow instructions |
 
 ### references/
 
@@ -60,7 +60,7 @@ Last updated: 2026-03-26
 ### SKILL.md
 | File | Status |
 |------|--------|
-| SKILL.md | [~] Placeholder — needs frontmatter + workflow instructions |
+| SKILL.md | [~] Frontmatter + pipeline position done — needs workflow instructions |
 
 ### references/
 
@@ -81,7 +81,7 @@ Last updated: 2026-03-26
 ### SKILL.md
 | File | Status |
 |------|--------|
-| SKILL.md | [~] Placeholder — needs frontmatter + workflow instructions |
+| SKILL.md | [~] Frontmatter + pipeline position done — needs workflow instructions |
 
 ### references/
 
@@ -122,12 +122,13 @@ Last updated: 2026-03-26
 ### SKILL.md
 | File | Status |
 |------|--------|
-| SKILL.md | [~] Placeholder — needs frontmatter + workflow instructions |
+| SKILL.md | [~] Frontmatter + pipeline position done — needs workflow instructions |
 
 ### references/
 
 | File | Status | Notes |
 |------|--------|-------|
+| tracker-spec.md | [x] | Full MORPHIQ-TRACKER.md spec — 14 sections, KPI definitions, update rules per skill |
 | prompt-taxonomy.md | [ ] | Brand, category, comparison, feature prompt types |
 | query-targets.md | [ ] | Which AI systems to query + when to use each |
 | provider-strategies.md | [ ] | OpenAI, Gemini, Perplexity, Anthropic — API keys + data shapes |
@@ -156,10 +157,10 @@ Last updated: 2026-03-26
 |----------|------|-------------|---------|-------------|-------|
 | Root files | 2 | 0 | 0 | 3 | 5 |
 | SKILL.md files | 0 | 4 | 0 | 0 | 4 |
-| Reference files | 8 | 0 | 3 | 9 | 20 |
+| Reference files | 9 | 0 | 3 | 9 | 21 |
 | Scripts | 0 | 0 | 0 | 16 | 16 |
 | Evals | 0 | 0 | 0 | 4 | 4 |
-| **Total** | **10** | **4** | **3** | **32** | **49** |
+| **Total** | **11** | **4** | **3** | **32** | **50** |
 
 ## Blockers
 
