@@ -81,7 +81,7 @@ Run `scripts/validate-coverage.py` with generated content + triggering sub-queri
 |---|---|---|
 | Schema Injection | Classify content type, generate JSON-LD. New content: embed schema in content artifact. Existing content: separate schema artifact with implementation tracking. | `references/schema-templates.md` |
 | Metadata Optimization | Meta description, slug, OG tags | `references/metadata-patterns.md` |
-| llms.txt Scaffolding | Generate llms.txt from sitemap | `references/llms-txt-spec.md` |
+| llms.txt Generation | Full autonomous pipeline: scrape → LLM → validate → repair → template fallback | `references/llms-txt-spec.md` |
 | Content Restructuring | Fix headings, split paragraphs | — |
 | Internal Linking | Link related pages for `site:` coverage | `references/content-lab-pipeline.md` |
 | Enrichment | Additional search for missing stats/citations | `references/enrichment-sources.md` |

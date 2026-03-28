@@ -472,9 +472,10 @@ Schema injection behavior depends on `entry_point`:
 - Open Graph tags
 - See `references/metadata-patterns.md` for rules
 
-**llms.txt Scaffolding** (`scripts/generate-llms-txt.py`):
+**llms.txt Generation** (`scripts/generate-llms-txt.py`):
 
-- If building for a full site, generates llms.txt from sitemap
+- Full autonomous pipeline: context collection → prompt construction → LLM call → validation → repair → template fallback
+- Scrapes homepage, robots.txt, sitemap.xml, docs; builds grounding evidence; calls LLM with 14-section contract
 - See `references/llms-txt-spec.md` for the spec
 
 **Content Restructuring** (`scripts/restructure-content.py`):

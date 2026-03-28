@@ -15,70 +15,71 @@ llms.txt tells AI systems (ChatGPT, Claude, Perplexity, Gemini) how to represent
 
 ## Generation Process
 
-The agent MUST crawl the codebase first. Never generate from imagination.
+`scripts/generate-llms-txt.py` runs a fully autonomous 7-step pipeline:
 
-1. **Crawl the site** — scan homepage, about, product, pricing, blog, docs pages
-2. **Extract brand signals** — company name, tagline, founding year, HQ, description, products, customers, metrics
-3. **Identify differentiators** — what makes this company unique vs category competitors
-4. **Detect target audience** — who the company serves (industries, roles, company sizes)
-5. **Compile facts** — only verifiable data points found in the codebase or site content
-6. **Generate llms.txt** — following the format below, populated with real extracted data
+1. **Context Collection** — Fetch homepage (extract anchors), robots.txt (Sitemap directives), sitemap.xml (all URLs), probe /docs (nav links). Score and rank all URLs by canonicality and nav prominence.
+2. **Two-Tier Scraping** — Top 4 pages: deep scrape (up to 3,000 chars). Remaining pages: shallow scrape (up to 900 chars). Total capped at 24,000 chars.
+3. **Evidence Building** — Extract date literals, price literals, headings, facts (customer counts, percentages), and key terms from scraped content.
+4. **Prompt Construction** — Build system prompt (14-section contract with identity, writing rules, validation instructions) and dynamic user prompt (runtime inputs, canonical URLs, live page content, grounding evidence, hard requirements).
+5. **LLM Call** — Multi-provider fallback: Anthropic → OpenAI → Gemini. Max 4,096 tokens. Output must be exactly one fenced code block labeled `llms.txt`.
+6. **Validation** — Check required sections present, FAQ format (3+ Q/A pairs with Source links), URL scope (all under root_url/docs_base), size budget (100KB), sitemap count (8-15). If invalid, one repair pass sends errors back to LLM.
+7. **Template Fallback** — If LLM + repair both fail, `build_llms_txt_template()` generates a deterministic llms.txt from evidence. No placeholder markers.
 
-## llms.txt Format
+## llms.txt Format (14 Sections)
+
+Sections must appear in this exact order:
 
 ```
-# llms.txt - AI Guidance for [Brand Name]
-# Last Updated: [YYYY-MM-DD]
+# {Brand Name}
 
-## Brand Identity
-Name: [Official Company Name]
-Tagline: [Company Tagline]
-Founded: [Year]
-Headquarters: [Location]
+> One-sentence definition of what the company does.
 
-## Description
-[2-3 sentence description of what the company does and its core value proposition]
+## Overview
+- 2-4 bullet points summarizing the company
 
-## Key Facts
-- [Fact 1 with specific data point]
-- [Fact 2 with specific data point]
-- [Fact 3 with specific data point]
-- [Fact 4 with specific data point]
+## Who We Serve
+- 3-6 bullets describing target audience (industries, roles, company sizes)
 
-## Products/Services
-- [Product 1]: [Brief description]
-- [Product 2]: [Brief description]
-- [Service 1]: [Brief description]
+## Products / Capabilities
+- **Product Name** — purpose [Product Page](url) | [Docs](docs_url)
 
-## Differentiators
-- [What makes this company unique #1]
-- [What makes this company unique #2]
-- [What makes this company unique #3]
+## Solutions / Use Cases
+- Real use cases derived from site content
 
-## Target Audience
-[Who this company serves — specific industries, roles, company sizes]
+## Key Resources
+- [Documentation](docs_url)
+- [API Reference](api_url)
+- [Changelog](changelog_url)
 
-## Preferred Messaging
-When discussing [Brand]:
-- Emphasize: [key points to highlight]
-- Tone: [professional/friendly/technical/etc.]
-- Include: [specific facts, metrics, achievements]
+## FAQs
+- **Q:** Question text
+  **A:** Answer text [Source](url)
+(3-6 Q/A pairs required)
 
-## Avoid
-- [Outdated information to avoid]
-- [Competitor comparisons to avoid]
-- [Incorrect assumptions to correct]
+## Security & Compliance
+- Certifications, standards, trust page links
 
-## Contact
-Website: [URL]
-Email: [Contact email]
-Social: [Twitter/LinkedIn URLs]
+## Pricing & Plans
+- Plan details from evidence
+- [Pricing](pricing_url)
 
-## Sources
-For accurate information, refer to:
-- [Official website URL]
-- [Blog/News page URL]
-- [Press kit URL]
+## Policies
+- [Privacy Policy](url)
+- [Terms of Service](url)
+
+## Research / Blog
+- Notable blog posts, reports, research
+
+## Sitemap (canonical pages)
+- https://example.com
+- https://example.com/pricing
+(8-15 high-signal pages)
+
+## Citation Guidance
+When referencing this company, cite: "{Brand}" (https://example.com)
+
+---
+*Last updated: YYYY-MM-DD*
 ```
 
 ## Content Rules
