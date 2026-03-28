@@ -452,6 +452,192 @@ def build_evidence(scraped_pages, allowed_urls):
     }
 
 
+# ── Prompt Construction ───────────────────────────────────────────────────────
+
+
+def build_system_prompt():
+    # type: () -> str
+    """Build the system prompt that instructs the LLM to generate llms.txt.
+
+    Returns a deterministic string containing the full contract:
+    identity block, inputs description, data-source rules, selection ranking,
+    writing style, 14-section order, validation pass, and output format.
+    """
+    return """\
+<identity>
+You are an autonomous backend agent for generating llms.txt files.
+Your tone is neutral, factual, and deterministic.
+You produce structured, spec-compliant llms.txt content from scraped website data.
+You never invent information. Every claim must be traceable to the provided content.
+</identity>
+
+## Inputs
+
+You receive the following runtime inputs:
+- root_url — the canonical root URL of the target website
+- docs_base — the documentation root URL (may be null)
+- brand_name — the company or product name
+- tagline — the brand tagline or one-line description
+- locales — list of locale codes (default: ["en"])
+- size_budgets — maximum output size in KB
+- run_date — ISO-8601 date of this generation run
+
+## Data Sources
+
+ONLY use the provided scraped content. Do NOT hallucinate URLs, features, pricing,
+or any claims not present in the source material. Every statement must be traceable
+to a specific scraped page or evidence item.
+
+## Selection Ranking
+
+When choosing which pages and facts to include, apply this priority order:
+1. Canonicality — root, /pricing, /product, /docs rank highest
+2. Nav prominence — pages linked from the main navigation
+3. Product/docs coverage — feature pages and documentation
+4. Policies — privacy, terms, security pages
+5. Pricing/about/blog — lower priority supplementary content
+
+## Writing Style
+
+- Neutral and factual — no marketing fluff, no superlatives
+- Compact — prefer bullet points over paragraphs
+- Specific numbers — use exact figures from source material
+- Absolute HTTPS URLs only — never use relative paths or http://
+
+## Section Order
+
+Generate exactly these 14 sections in this order:
+
+a. **H1** — `# {brand_name}` followed by a blockquote definition of the company/product
+b. **Overview** — 2-4 bullets summarising what the product/company does
+c. **Who We Serve** — 3-6 bullets identifying the target audience
+d. **Products / Capabilities** — name, one-line purpose, and link for each product
+e. **Solutions / Use Cases** — key use cases or solution areas
+f. **Key Resources** — docs, API reference, SDKs, changelog, and other developer resources
+g. **FAQs** — 3-6 Q/A pairs using **Q:**/**A:** format, each ending with [Source](url)
+h. **Security & Compliance** — certifications, compliance standards, trust page links
+i. **Pricing & Plans** — plan names, prices, and feature highlights
+j. **Policies** — links to privacy policy, terms of service, cookie policy, etc.
+k. **Research / Reports / Blog** — notable posts, reports, or whitepapers
+l. **Sitemap** — 8-15 high-signal pages as a markdown link list
+m. **Citation Guidance** — instructions for LLMs on how to cite this source
+n. **Last Updated** — ISO-8601 date of this generation run
+
+## Validation Pass
+
+Before finalising output, run a validation pass:
+- Verify every URL is absolute HTTPS
+- Verify no claims lack a source in the provided evidence
+- Verify the section count is exactly 14
+- Verify FAQs use **Q:**/**A:** format with [Source](url) citations
+- Verify Sitemap contains 8-15 entries
+- Verify output fits within the size budget
+
+## Output Format
+
+Return exactly one fenced code block labelled ```llms.txt containing the
+complete llms.txt content. Do not include any text outside the fenced block.
+"""
+
+
+def build_user_prompt(context, brand_info):
+    # type: (Dict, Dict) -> str
+    """Build the user prompt from collected context and brand info.
+
+    Arguments:
+        context: dict from collect_llms_context with keys root_url, domain,
+                 docs_base, ranked_urls, scraped_pages, evidence.
+        brand_info: dict with keys name, tagline, and optionally description,
+                    products, audience, industry.
+
+    Returns a string containing runtime inputs, canonical source URLs,
+    brand information, live page content, grounding evidence, and
+    hard requirements.
+    """
+    run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    root_url = context.get("root_url", "")
+    docs_base = context.get("docs_base") or "N/A"
+    brand_name = brand_info.get("name", "")
+    tagline = brand_info.get("tagline", "")
+
+    # ── Runtime inputs block ──────────────────────────────────────────
+    parts = []
+    parts.append("Generate llms.txt for this website. Follow the system prompt contract exactly.")
+    parts.append("")
+    parts.append("<runtime_inputs>")
+    parts.append(f"root_url: {root_url}")
+    parts.append(f"docs_base: {docs_base}")
+    parts.append(f"brand_name: {brand_name}")
+    parts.append(f"tagline: {tagline}")
+    parts.append("locales: [\"en\"]")
+    parts.append(f"size_budgets: {SIZE_BUDGET_KB} KB")
+    parts.append(f"run_date: {run_date}")
+    parts.append("</runtime_inputs>")
+
+    # ── Canonical source URLs ─────────────────────────────────────────
+    evidence = context.get("evidence", {})
+    allowed_urls = evidence.get("allowed_urls", [])
+
+    parts.append("")
+    parts.append("<canonical_source_urls>")
+    for url in allowed_urls:
+        parts.append(f"- {url}")
+    parts.append("</canonical_source_urls>")
+
+    # ── Brand section ─────────────────────────────────────────────────
+    parts.append("")
+    parts.append("## Brand Information")
+    parts.append(f"- Company: {brand_name}")
+    parts.append(f"- Website: {root_url}")
+    parts.append(f"- Tagline: {tagline}")
+    if brand_info.get("description"):
+        parts.append(f"- Description: {brand_info['description']}")
+    if brand_info.get("products"):
+        parts.append(f"- Products: {brand_info['products']}")
+    if brand_info.get("audience"):
+        parts.append(f"- Audience: {brand_info['audience']}")
+    if brand_info.get("industry"):
+        parts.append(f"- Industry: {brand_info['industry']}")
+
+    # ── Live page content ─────────────────────────────────────────────
+    parts.append("")
+    parts.append("## Live Page Content")
+    scraped_pages = context.get("scraped_pages", [])
+    for page in scraped_pages:
+        url = page.get("url", "")
+        tier = page.get("tier", "shallow")
+        headings = page.get("headings", [])
+        text = page.get("text", "")
+
+        char_limit = DEEP_CHAR_LIMIT if tier == "deep" else SHALLOW_CHAR_LIMIT
+        truncated_text = text[:char_limit]
+
+        parts.append("")
+        parts.append(f"### {url}")
+        parts.append(f"Tier: {tier}")
+        if headings:
+            parts.append(f"Headings: {', '.join(headings)}")
+        parts.append(f"Content: {truncated_text}")
+
+    # ── Grounding evidence ────────────────────────────────────────────
+    parts.append("")
+    parts.append("## Grounding Evidence")
+    parts.append(json.dumps(evidence, indent=2))
+
+    # ── Hard requirements ─────────────────────────────────────────────
+    parts.append("")
+    parts.append("## Hard Requirements")
+    parts.append("- Output MUST be exactly one fenced code block labelled ```llms.txt")
+    parts.append("- All links MUST be absolute HTTPS URLs")
+    parts.append("- All content MUST be scoped to the provided domain — do not reference external sites")
+    parts.append("- FAQs MUST use **Q:**/**A:** format with [Source](url) citations")
+    parts.append("- Sitemap section MUST contain 8-15 high-signal page links")
+    parts.append(f"- Total output MUST fit within {SIZE_BUDGET_KB} KB")
+
+    return "\n".join(parts)
+
+
 def collect_llms_context(root_url):
     # type: (str) -> Dict
     """Main enrichment orchestrator — discover, score, scrape, evidence.

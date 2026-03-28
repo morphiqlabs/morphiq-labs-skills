@@ -490,5 +490,94 @@ class TestCollectLlmsContext(unittest.TestCase):
             self.assertEqual(p["tier"], "deep")
 
 
+# ── Task 4: System Prompt & User Prompt Construction ──────────────────────────
+
+
+class TestBuildSystemPrompt(unittest.TestCase):
+    def test_contains_identity_block(self):
+        prompt = gen.build_system_prompt()
+        self.assertIn("<identity>", prompt)
+        self.assertIn("</identity>", prompt)
+
+    def test_contains_all_14_sections(self):
+        prompt = gen.build_system_prompt()
+        expected_keywords = [
+            "Overview",
+            "Who",       # "Who We Serve" or "Who we serve"
+            "Products",
+            "Solutions",
+            "Key Resources",
+            "FAQs",
+            "Security",
+            "Pricing",
+            "Policies",
+            "Sitemap",
+            "Citation",
+        ]
+        for kw in expected_keywords:
+            self.assertIn(kw, prompt, f"Missing section keyword: {kw}")
+
+    def test_contains_validation_instructions(self):
+        prompt = gen.build_system_prompt()
+        self.assertIn("alidation", prompt)  # "Validation" or "validation"
+
+    def test_output_format_instruction(self):
+        prompt = gen.build_system_prompt()
+        self.assertIn("```llms.txt", prompt)
+
+
+class TestBuildUserPrompt(unittest.TestCase):
+    def _sample_context(self):
+        return {
+            "root_url": "https://ramp.com",
+            "domain": "ramp.com",
+            "docs_base": "https://ramp.com/docs",
+            "ranked_urls": ["https://ramp.com/", "https://ramp.com/pricing"],
+            "scraped_pages": [
+                {
+                    "url": "https://ramp.com/",
+                    "text": "Ramp is the corporate card.",
+                    "headings": ["Ramp"],
+                    "tier": "deep",
+                },
+            ],
+            "evidence": {
+                "allowed_urls": ["https://ramp.com/", "https://ramp.com/pricing"],
+                "date_literals": ["2019"],
+                "price_literals": ["free to start"],
+                "headings": ["Ramp"],
+                "facts": ["15,000+ businesses"],
+                "key_terms": ["corporate card"],
+            },
+        }
+
+    def _sample_brand(self):
+        return {
+            "name": "Ramp",
+            "tagline": "The corporate card that helps you spend less",
+        }
+
+    def test_contains_runtime_inputs(self):
+        prompt = gen.build_user_prompt(self._sample_context(), self._sample_brand())
+        self.assertIn("<runtime_inputs>", prompt)
+        self.assertIn("ramp.com", prompt)
+
+    def test_contains_canonical_urls(self):
+        prompt = gen.build_user_prompt(self._sample_context(), self._sample_brand())
+        self.assertIn("<canonical_source_urls>", prompt)
+
+    def test_includes_scraped_content(self):
+        prompt = gen.build_user_prompt(self._sample_context(), self._sample_brand())
+        self.assertIn("Ramp is the corporate card.", prompt)
+
+    def test_includes_evidence(self):
+        prompt = gen.build_user_prompt(self._sample_context(), self._sample_brand())
+        self.assertIn("Grounding Evidence", prompt)
+
+    def test_includes_hard_requirements(self):
+        prompt = gen.build_user_prompt(self._sample_context(), self._sample_brand())
+        self.assertIn("Hard Requirements", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()
