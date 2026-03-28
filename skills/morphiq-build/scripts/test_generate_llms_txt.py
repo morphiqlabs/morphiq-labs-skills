@@ -213,5 +213,133 @@ class TestConstants(unittest.TestCase):
         self.assertEqual(len(gen.DOCS_PATH_PATTERNS), 7)
 
 
+# ── Task 2: URL Scoring, Classification & Page Scraping ─────────────────────
+
+
+class TestClassifyUrl(unittest.TestCase):
+    def test_home_root(self):
+        self.assertEqual(gen.classify_url("https://example.com/", "example.com"), "home")
+
+    def test_home_empty_path(self):
+        self.assertEqual(gen.classify_url("https://example.com", "example.com"), "home")
+
+    def test_pricing(self):
+        self.assertEqual(gen.classify_url("https://example.com/pricing", "example.com"), "pricing")
+
+    def test_blog_subpath(self):
+        self.assertEqual(gen.classify_url("https://example.com/blog/some-post", "example.com"), "blog")
+
+    def test_other_unknown_path(self):
+        self.assertEqual(gen.classify_url("https://example.com/random-page", "example.com"), "other")
+
+    def test_security(self):
+        self.assertEqual(gen.classify_url("https://example.com/security", "example.com"), "security")
+
+    def test_legal_privacy(self):
+        self.assertEqual(gen.classify_url("https://example.com/privacy", "example.com"), "legal")
+
+    def test_case_insensitive(self):
+        self.assertEqual(gen.classify_url("https://example.com/Pricing", "example.com"), "pricing")
+
+    def test_docs(self):
+        self.assertEqual(gen.classify_url("https://example.com/docs/getting-started", "example.com"), "docs")
+
+    def test_comparison_vs(self):
+        self.assertEqual(gen.classify_url("https://example.com/vs/competitor", "example.com"), "comparison")
+
+    def test_changelog(self):
+        self.assertEqual(gen.classify_url("https://example.com/changelog", "example.com"), "changelog")
+
+
+class TestScoreUrl(unittest.TestCase):
+    def test_home_scores_highest(self):
+        home_score = gen.score_url("https://example.com/", "example.com")
+        other_score = gen.score_url("https://example.com/random-page", "example.com")
+        self.assertGreater(home_score, other_score)
+
+    def test_nav_urls_boost(self):
+        url = "https://example.com/about"
+        score_without = gen.score_url(url, "example.com", nav_urls=None)
+        score_with = gen.score_url(url, "example.com", nav_urls={url})
+        self.assertEqual(score_with, score_without + 20)
+
+    def test_deep_path_penalty(self):
+        shallow = gen.score_url("https://example.com/blog", "example.com")
+        deep = gen.score_url("https://example.com/blog/2024/01/my-post", "example.com")
+        self.assertGreater(shallow, deep)
+
+    def test_canonical_path_bonus(self):
+        # A URL with <=1 path segments should get +10 canonical bonus
+        score = gen.score_url("https://example.com/pricing", "example.com")
+        # pricing base = 90, canonical bonus +10 = 100
+        self.assertEqual(score, 100)
+
+    def test_none_nav_urls(self):
+        # Should not crash with nav_urls=None
+        score = gen.score_url("https://example.com/pricing", "example.com")
+        self.assertIsInstance(score, int)
+
+    def test_home_base_score(self):
+        score = gen.score_url("https://example.com/", "example.com")
+        # home=100, canonical bonus +10 = 110
+        self.assertEqual(score, 110)
+
+
+class TestExtractPageText(unittest.TestCase):
+    def test_strips_scripts_and_styles(self):
+        html = "<html><head><style>body{color:red}</style></head><body><script>alert(1)</script><p>Hello world</p></body></html>"
+        text = gen.extract_page_text(html)
+        self.assertIn("Hello world", text)
+        self.assertNotIn("alert", text)
+        self.assertNotIn("color:red", text)
+
+    def test_respects_max_chars(self):
+        html = "<p>A long paragraph with many characters that should be truncated.</p>"
+        text = gen.extract_page_text(html, max_chars=10)
+        self.assertLessEqual(len(text), 10)
+
+    def test_empty_html(self):
+        text = gen.extract_page_text("")
+        self.assertEqual(text, "")
+
+    def test_skips_noscript(self):
+        html = "<body><noscript>Enable JS</noscript><p>Content</p></body>"
+        text = gen.extract_page_text(html)
+        self.assertNotIn("Enable JS", text)
+        self.assertIn("Content", text)
+
+    def test_skips_svg(self):
+        html = "<body><svg><text>Icon</text></svg><p>Visible</p></body>"
+        text = gen.extract_page_text(html)
+        self.assertNotIn("Icon", text)
+        self.assertIn("Visible", text)
+
+
+class TestExtractHeadings(unittest.TestCase):
+    def test_extracts_h1_through_h3(self):
+        html = "<h1>Title</h1><h2>Subtitle</h2><h3>Section</h3>"
+        headings = gen.extract_headings(html)
+        self.assertEqual(headings, ["Title", "Subtitle", "Section"])
+
+    def test_ignores_h4_and_beyond(self):
+        html = "<h1>Keep</h1><h4>Skip</h4><h5>Skip2</h5><h6>Skip3</h6>"
+        headings = gen.extract_headings(html)
+        self.assertEqual(headings, ["Keep"])
+
+    def test_strips_inner_html(self):
+        html = '<h1><span class="highlight">Bold</span> Title</h1>'
+        headings = gen.extract_headings(html)
+        self.assertEqual(headings, ["Bold Title"])
+
+    def test_empty_html(self):
+        headings = gen.extract_headings("")
+        self.assertEqual(headings, [])
+
+    def test_multiline_heading(self):
+        html = "<h2>\n  Spaced Heading\n</h2>"
+        headings = gen.extract_headings(html)
+        self.assertEqual(headings, ["Spaced Heading"])
+
+
 if __name__ == "__main__":
     unittest.main()

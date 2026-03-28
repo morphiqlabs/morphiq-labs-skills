@@ -189,6 +189,170 @@ def fetch_url(url: str, timeout: int = 15) -> Tuple[int, str]:
         return (0, "")
 
 
+# ── URL Classification & Scoring ────────────────────────────────────────────
+
+CLASSIFICATION_PATTERNS = {
+    "pricing": ["/pricing", "/plans"],
+    "product": ["/product", "/features", "/platform"],
+    "about": ["/about", "/team", "/company"],
+    "docs": ["/docs", "/documentation", "/help", "/guide", "/api", "/reference"],
+    "blog": ["/blog", "/posts", "/articles"],
+    "solutions": ["/solutions", "/use-cases", "/use-case"],
+    "case-study": ["/case-stud", "/customers", "/success-stories"],
+    "comparison": ["/vs", "/compare", "/alternative"],
+    "careers": ["/careers", "/jobs"],
+    "security": ["/security", "/trust", "/compliance"],
+    "legal": ["/privacy", "/terms", "/legal", "/cookie"],
+    "changelog": ["/changelog", "/updates", "/release-notes", "/whats-new"],
+}
+
+CANONICALITY_SCORES = {
+    "home": 100,
+    "pricing": 90,
+    "product": 85,
+    "docs": 80,
+    "about": 70,
+    "solutions": 65,
+    "security": 60,
+    "legal": 55,
+    "changelog": 50,
+    "case-study": 45,
+    "comparison": 40,
+    "blog": 30,
+    "careers": 20,
+    "other": 10,
+}
+
+
+def classify_url(url: str, domain: str) -> str:
+    """Classify a URL by its path pattern.
+
+    Returns one of: home, pricing, product, about, docs, blog, solutions,
+    case-study, comparison, careers, security, legal, changelog, other.
+    """
+    parsed = urlparse(url)
+    path = parsed.path.lower().rstrip("/")
+
+    # Home page: empty path or just "/"
+    if not path:
+        return "home"
+
+    for category, patterns in CLASSIFICATION_PATTERNS.items():
+        for pattern in patterns:
+            if pattern in path:
+                return category
+
+    return "other"
+
+
+def score_url(url: str, domain: str, nav_urls=None) -> int:
+    """Score a URL for ranking. Higher = more important.
+
+    - Base score from CANONICALITY_SCORES.
+    - +20 if url is in nav_urls.
+    - -5 per path segment beyond depth 2.
+    - +10 if path has <= 1 segments (canonical bonus).
+    """
+    category = classify_url(url, domain)
+    score = CANONICALITY_SCORES.get(category, 10)
+
+    parsed = urlparse(url)
+    path = parsed.path.strip("/")
+    segments = [s for s in path.split("/") if s] if path else []
+    num_segments = len(segments)
+
+    # Canonical bonus: short paths
+    if num_segments <= 1:
+        score += 10
+
+    # Depth penalty: segments beyond 2
+    if num_segments > 2:
+        score -= 5 * (num_segments - 2)
+
+    # Nav URL boost
+    if nav_urls and url in nav_urls:
+        score += 20
+
+    return score
+
+
+# ── HTML Content Extraction ─────────────────────────────────────────────────
+
+SKIP_TAGS = frozenset({"script", "style", "noscript", "svg", "head"})
+
+
+class TextExtractor(HTMLParser):
+    """Extract visible text from HTML, skipping script/style/noscript/svg/head."""
+
+    def __init__(self):
+        super().__init__()
+        self.pieces = []       # type: List[str]
+        self._skip_depth = 0   # nesting depth inside skip tags
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() in SKIP_TAGS:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag):
+        if tag.lower() in SKIP_TAGS:
+            self._skip_depth = max(0, self._skip_depth - 1)
+
+    def handle_data(self, data):
+        if self._skip_depth == 0:
+            self.pieces.append(data)
+
+    def get_text(self) -> str:
+        raw = " ".join(self.pieces)
+        # Collapse whitespace
+        return " ".join(raw.split())
+
+
+def extract_page_text(html: str, max_chars: Optional[int] = None) -> str:
+    """Extract visible text from HTML, skipping non-visible elements.
+
+    Returns collapsed whitespace text. Truncates at *max_chars* if set.
+    """
+    if not html:
+        return ""
+
+    extractor = TextExtractor()
+    try:
+        extractor.feed(html)
+    except Exception:
+        pass  # graceful on malformed HTML
+
+    text = extractor.get_text()
+
+    if max_chars is not None:
+        text = text[:max_chars]
+
+    return text
+
+
+def extract_headings(html: str) -> List[str]:
+    """Extract h1-h3 heading text from HTML via regex.
+
+    Strips inner HTML tags from heading content.
+    """
+    if not html:
+        return []
+
+    # Match <h1>...<h3> tags, including attributes, across lines
+    pattern = re.compile(r"<h([1-3])(?:\s[^>]*)?>(.+?)</h\1>", re.DOTALL | re.IGNORECASE)
+    headings = []  # type: List[str]
+
+    for match in pattern.finditer(html):
+        inner = match.group(2)
+        # Strip inner HTML tags
+        text = re.sub(r"<[^>]+>", "", inner)
+        # Collapse whitespace
+        text = " ".join(text.split())
+        if text:
+            headings.append(text)
+
+    return headings
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 
