@@ -844,6 +844,273 @@ def validate_llms_txt(content, root_url, docs_base):
     return errors
 
 
+# ── Repair Pass & Template Fallback ──────────────────────────────────────
+
+
+def repair_llms_txt(original_content, errors, system_prompt, user_prompt):
+    # type: (str, List[str], str, str) -> Optional[str]
+    """One-shot LLM repair: feed original content + validation errors back.
+
+    Returns the extracted repaired content string, or None if repair fails.
+    """
+    error_block = "\n".join(f"- {e}" for e in errors)
+    repair_prompt = (
+        f"{user_prompt}\n\n"
+        f"## Repair Request\n\n"
+        f"The following llms.txt was generated but failed validation:\n\n"
+        f"```\n{original_content}\n```\n\n"
+        f"Validation errors:\n{error_block}\n\n"
+        f"Fix ALL validation errors and return the corrected output "
+        f"in a single ```llms.txt fenced block."
+    )
+    raw = call_llm(system_prompt, repair_prompt)
+    if raw is None:
+        return None
+    return extract_fenced_block(raw)
+
+
+def slug_to_title(path):
+    # type: (str) -> str
+    """Convert URL path slug to human-readable title.
+
+    Uses the last segment of the path, replaces hyphens and underscores
+    with spaces, and applies title case. Returns "Page" for empty/root paths.
+    """
+    path = path.strip("/")
+    if not path:
+        return "Page"
+    segment = path.rsplit("/", 1)[-1]
+    return segment.replace("-", " ").replace("_", " ").title()
+
+
+def _classify_urls_by_type(ranked_urls, domain):
+    # type: (List[str], str) -> Dict[str, List[str]]
+    """Group ranked URLs by their classify_url result."""
+    groups = {}  # type: Dict[str, List[str]]
+    for url in ranked_urls:
+        category = classify_url(url, domain)
+        groups.setdefault(category, []).append(url)
+    return groups
+
+
+def build_llms_txt_template(context, brand_info):
+    # type: (Dict, Dict) -> str
+    """Build a deterministic llms.txt from collected evidence. No LLM call.
+
+    Used as fallback when LLM generation + repair both fail.
+    Produces all 14 sections with real content or sensible fallbacks.
+    No <!-- POPULATE: --> markers or HTML comments.
+    """
+    root_url = context.get("root_url", "")
+    domain = context.get("domain", "")
+    docs_base = context.get("docs_base")
+    ranked_urls = context.get("ranked_urls", [])
+    scraped_pages = context.get("scraped_pages", [])
+    evidence = context.get("evidence", {})
+    run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    brand_name = brand_info.get("name", domain)
+    tagline = brand_info.get("tagline", "")
+    audience = brand_info.get("audience", "")
+
+    url_groups = _classify_urls_by_type(ranked_urls, domain)
+
+    # -- Gather homepage text for overview/tagline --
+    homepage_text = ""
+    for page in scraped_pages:
+        if page.get("url", "").rstrip("/") == root_url.rstrip("/"):
+            homepage_text = page.get("text", "")
+            break
+
+    # Split homepage into sentences for overview bullets
+    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', homepage_text) if s.strip()]
+
+    parts = []
+
+    # a. H1 + tagline blockquote
+    parts.append(f"# {brand_name}")
+    parts.append("")
+    if tagline:
+        parts.append(f"> {tagline}")
+    elif sentences:
+        parts.append(f"> {sentences[0]}")
+    else:
+        parts.append(f"> Visit {root_url} for details.")
+    parts.append("")
+
+    # b. Overview
+    parts.append("## Overview")
+    overview_sentences = sentences[:4] if sentences else []
+    if overview_sentences:
+        for s in overview_sentences:
+            parts.append(f"- {s}")
+    else:
+        parts.append(f"- Visit {root_url} for details.")
+    parts.append("")
+
+    # c. Who We Serve
+    parts.append("## Who We Serve")
+    if audience:
+        for item in audience.split(","):
+            item = item.strip()
+            if item:
+                parts.append(f"- {item}")
+    else:
+        parts.append(f"- Businesses and teams looking for solutions from {brand_name}")
+        parts.append(f"- Visit {root_url} for details on who we serve.")
+    parts.append("")
+
+    # d. Products / Capabilities
+    parts.append("## Products / Capabilities")
+    product_urls = url_groups.get("product", [])
+    if product_urls:
+        for url in product_urls[:8]:
+            title = slug_to_title(urlparse(url).path)
+            parts.append(f"- **{title}** - [{title}]({url})")
+    else:
+        parts.append(f"- Visit {root_url} for details on products and capabilities.")
+    parts.append("")
+
+    # e. Solutions / Use Cases
+    parts.append("## Solutions / Use Cases")
+    solution_urls = url_groups.get("solutions", [])
+    if solution_urls:
+        for url in solution_urls[:8]:
+            title = slug_to_title(urlparse(url).path)
+            parts.append(f"- **{title}** - [{title}]({url})")
+    else:
+        parts.append(f"- Visit {root_url} for details on solutions and use cases.")
+    parts.append("")
+
+    # f. Key Resources
+    parts.append("## Key Resources")
+    if docs_base:
+        parts.append(f"- [Documentation]({docs_base})")
+    changelog_urls = url_groups.get("changelog", [])
+    if changelog_urls:
+        parts.append(f"- [Changelog]({changelog_urls[0]})")
+    blog_urls = url_groups.get("blog", [])
+    if blog_urls:
+        parts.append(f"- [Blog]({blog_urls[0]})")
+    if not docs_base and not changelog_urls and not blog_urls:
+        parts.append(f"- Visit {root_url} for resources.")
+    parts.append("")
+
+    # g. FAQs — build from evidence, minimum 3 pairs
+    parts.append("## FAQs")
+    faqs = []
+    price_literals = evidence.get("price_literals", [])
+    facts = evidence.get("facts", [])
+
+    if price_literals:
+        price_text = ", ".join(price_literals[:3])
+        faqs.append(
+            f"- **Q:** What does {brand_name} cost?\n"
+            f"  **A:** {price_text}. [Source]({root_url})"
+        )
+
+    if facts:
+        fact_text = "; ".join(facts[:3])
+        faqs.append(
+            f"- **Q:** How many customers does {brand_name} have?\n"
+            f"  **A:** {fact_text}. [Source]({root_url})"
+        )
+
+    key_terms = evidence.get("key_terms", [])
+    if key_terms:
+        term = key_terms[0]
+        faqs.append(
+            f"- **Q:** What is {term}?\n"
+            f"  **A:** {brand_name} offers {term}. Visit the website for more details. [Source]({root_url})"
+        )
+
+    # Ensure minimum 3 FAQs
+    generic_faqs = [
+        (
+            f"- **Q:** What does {brand_name} do?\n"
+            f"  **A:** {sentences[0] if sentences else f'{brand_name} provides solutions for businesses.'} [Source]({root_url})"
+        ),
+        (
+            f"- **Q:** Where can I learn more about {brand_name}?\n"
+            f"  **A:** Visit {root_url} for comprehensive information. [Source]({root_url})"
+        ),
+        (
+            f"- **Q:** How do I get started with {brand_name}?\n"
+            f"  **A:** Visit {root_url} to get started. [Source]({root_url})"
+        ),
+    ]
+    for gfaq in generic_faqs:
+        if len(faqs) >= 3:
+            break
+        faqs.append(gfaq)
+
+    for faq in faqs:
+        parts.append(faq)
+    parts.append("")
+
+    # h. Security & Compliance
+    parts.append("## Security & Compliance")
+    security_urls = url_groups.get("security", [])
+    if security_urls:
+        for url in security_urls[:4]:
+            title = slug_to_title(urlparse(url).path)
+            parts.append(f"- [{title}]({url})")
+    else:
+        parts.append(f"- Visit {root_url} for details on security and compliance.")
+    parts.append("")
+
+    # i. Pricing & Plans
+    parts.append("## Pricing & Plans")
+    pricing_urls = url_groups.get("pricing", [])
+    if price_literals:
+        for pl in price_literals[:5]:
+            parts.append(f"- {pl}")
+    if pricing_urls:
+        for url in pricing_urls[:3]:
+            parts.append(f"- [Pricing]({url})")
+    if not price_literals and not pricing_urls:
+        parts.append(f"- Visit {root_url} for pricing information.")
+    parts.append("")
+
+    # j. Policies
+    parts.append("## Policies")
+    legal_urls = url_groups.get("legal", [])
+    if legal_urls:
+        for url in legal_urls[:5]:
+            title = slug_to_title(urlparse(url).path)
+            parts.append(f"- [{title}]({url})")
+    else:
+        parts.append(f"- Visit {root_url} for policy information.")
+    parts.append("")
+
+    # k. Research / Blog
+    parts.append("## Research / Blog")
+    if blog_urls:
+        for url in blog_urls[:5]:
+            title = slug_to_title(urlparse(url).path)
+            parts.append(f"- [{title}]({url})")
+    else:
+        parts.append(f"- Visit {root_url} for blog and research content.")
+    parts.append("")
+
+    # l. Sitemap — top 15 ranked URLs
+    parts.append("## Sitemap (canonical pages)")
+    for url in ranked_urls[:15]:
+        parts.append(f"- {url}")
+    parts.append("")
+
+    # m. Citation Guidance
+    parts.append("## Citation Guidance")
+    parts.append(f'When referencing this company, cite: "{brand_name}" ({root_url})')
+    parts.append("")
+
+    # n. Last Updated
+    parts.append("---")
+    parts.append(f"*Last updated: {run_date}*")
+
+    return "\n".join(parts)
+
+
 # ── Context Collection Orchestrator ────────────────────────────────────────
 
 

@@ -751,5 +751,104 @@ Cite: "Ramp" (https://ramp.com)
         self.assertTrue(any("faq" in e.lower() for e in errors))
 
 
+# ── Task 7: Repair Pass & Template Fallback ────────────────────────────────
+
+
+class TestSlugToTitle(unittest.TestCase):
+    def test_basic(self):
+        self.assertEqual(mod.slug_to_title("/blog/my-great-post"), "My Great Post")
+
+    def test_empty(self):
+        self.assertEqual(mod.slug_to_title("/"), "Page")
+
+    def test_underscores(self):
+        self.assertEqual(mod.slug_to_title("/docs/getting_started"), "Getting Started")
+
+
+class TestRepairLlmsTxt(unittest.TestCase):
+    def setUp(self):
+        self._orig_call_llm = mod.call_llm
+
+    def tearDown(self):
+        mod.call_llm = self._orig_call_llm
+
+    def test_sends_errors_to_llm(self):
+        call_log = []
+
+        def mock_call(sys, usr, max_tokens=4096):
+            call_log.append(usr)
+            return '```llms.txt\n# Repaired\n```'
+
+        mod.call_llm = mock_call
+        result = mod.repair_llms_txt("original", ["Missing section: faqs"], "sys", "usr")
+        self.assertIn("# Repaired", result)
+        self.assertTrue(any("Missing section: faqs" in c for c in call_log))
+
+    def test_returns_none_on_failure(self):
+        mod.call_llm = lambda s, u, max_tokens=4096: None
+        result = mod.repair_llms_txt("original", ["error"], "sys", "usr")
+        self.assertIsNone(result)
+
+
+class TestBuildLlmsTxtTemplate(unittest.TestCase):
+    def _sample_context(self):
+        return {
+            "root_url": "https://ramp.com",
+            "domain": "ramp.com",
+            "docs_base": "https://ramp.com/docs",
+            "ranked_urls": [
+                "https://ramp.com/", "https://ramp.com/pricing",
+                "https://ramp.com/docs", "https://ramp.com/blog",
+                "https://ramp.com/about", "https://ramp.com/security",
+                "https://ramp.com/privacy", "https://ramp.com/terms",
+                "https://ramp.com/corporate-card", "https://ramp.com/features",
+                "https://ramp.com/solutions", "https://ramp.com/customers",
+            ],
+            "scraped_pages": [
+                {"url": "https://ramp.com/", "text": "Ramp helps businesses save 5% on spend. 15,000+ businesses trust Ramp. Finance automation platform.", "headings": ["Ramp — Save time and money"], "tier": "deep"},
+                {"url": "https://ramp.com/pricing", "text": "Free to start. No annual fees. Pro at $49/mo.", "headings": ["Pricing"], "tier": "deep"},
+            ],
+            "evidence": {
+                "allowed_urls": ["https://ramp.com/", "https://ramp.com/pricing", "https://ramp.com/docs",
+                                  "https://ramp.com/blog", "https://ramp.com/about", "https://ramp.com/security",
+                                  "https://ramp.com/privacy", "https://ramp.com/terms", "https://ramp.com/corporate-card"],
+                "date_literals": [],
+                "price_literals": ["Free to start", "$49/mo"],
+                "headings": ["Ramp — Save time and money", "Pricing"],
+                "facts": ["15,000+ businesses"],
+                "key_terms": ["corporate card"],
+            },
+        }
+
+    def test_contains_all_required_sections(self):
+        template = mod.build_llms_txt_template(self._sample_context(), {"name": "Ramp", "tagline": "Save time and money"})
+        self.assertIn("# Ramp", template)
+        self.assertIn("## Overview", template)
+        self.assertIn("## Who We Serve", template)
+        self.assertIn("## Products", template)
+        self.assertIn("## FAQs", template)
+        self.assertIn("## Security", template)
+        self.assertIn("## Pricing", template)
+        self.assertIn("## Policies", template)
+        self.assertIn("## Sitemap", template)
+        self.assertIn("## Citation Guidance", template)
+        self.assertIn("Last updated", template)
+
+    def test_no_populate_markers(self):
+        template = mod.build_llms_txt_template(self._sample_context(), {"name": "Ramp", "tagline": ""})
+        self.assertNotIn("POPULATE", template)
+        self.assertNotIn("<!--", template)
+
+    def test_uses_real_urls(self):
+        template = mod.build_llms_txt_template(self._sample_context(), {"name": "Ramp", "tagline": ""})
+        self.assertIn("ramp.com", template)
+
+    def test_faqs_have_correct_format(self):
+        template = mod.build_llms_txt_template(self._sample_context(), {"name": "Ramp", "tagline": ""})
+        self.assertIn("**Q:**", template)
+        self.assertIn("**A:**", template)
+        self.assertIn("[Source]", template)
+
+
 if __name__ == "__main__":
     unittest.main()
