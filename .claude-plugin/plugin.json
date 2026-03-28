@@ -5,8 +5,8 @@
   "author": {
     "name": "Morphiq Labs"
   },
-  "homepage": "https://github.com/morphiq-labs/morphiq-labs-skills",
-  "repository": "https://github.com/morphiq-labs/morphiq-labs-skills",
+  "homepage": "https://github.com/morphiqlabs/morphiq-labs-skills",
+  "repository": "https://github.com/morphiqlabs/morphiq-labs-skills",
   "license": "Apache-2.0",
   "keywords": ["ai-visibility", "aeo", "geo", "llm-optimization", "seo", "share-of-voice", "schema-markup", "content-optimization"]
 }

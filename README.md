@@ -7,7 +7,7 @@ Morphiq Skills encodes [Mudra Labs'](https://trymudra.com) AI visibility methodo
 ## Install
 
 ```bash
-npx skills add morphiq-labs/morphiq-skills
+npx skills add morphiqlabs/morphiq-labs-skills
 ```
 
 ## Skills
@@ -104,7 +104,6 @@ morphiq-labs-skills/
 ├── README.md
 ├── PIPELINE.md          # Data contracts between skills
 ├── PROGRESS.md          # Build tracker
-├── CHANGELOG.md
 ├── LICENSE
 └── skills/
     ├── morphiq-scan/    # Audit

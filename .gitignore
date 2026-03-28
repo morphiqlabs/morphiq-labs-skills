@@ -1,0 +1,11 @@
+# Agent install targets (created by npx skills add on user side)
+.agents/
+.claude/skills/
+.windsurf/
+.superset/
+
+# Local skill lock file
+skills-lock.json
+
+# OS
+.DS_Store
