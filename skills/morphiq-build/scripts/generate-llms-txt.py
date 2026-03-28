@@ -1,25 +1,56 @@
 #!/usr/bin/env python3
-"""generate-llms-txt.py — Generate llms.txt from sitemap data and brand identity spec.
+"""generate-llms-txt.py — Generate an optimised llms.txt for any domain.
 
-Usage: python3 generate-llms-txt.py <domain> [sitemap_url]
-Output: Complete llms.txt skeleton to stdout
+Pipeline (7 steps):
+  1. URL Discovery    — robots.txt, sitemap, homepage anchor crawl
+  2. Page Scoring     — rank pages by type/signal relevance
+  3. Deep Scrape      — fetch top-N pages, extract visible text
+  4. LLM Synthesis    — summarise scraped content into llms.txt sections
+  5. Assembly         — stitch sections into spec-compliant llms.txt
+  6. Validation       — size budget, link-check, schema conformance
+  7. Output           — write to stdout or file
 
-Generates both:
-1. Brand identity sections (from llms-txt-spec.md) with markers for agent to populate
-2. Sitemap-based page scaffolding auto-populated from fetched sitemap
+This module currently implements Step 1 (URL Discovery).
+
+Usage: python3 generate-llms-txt.py <domain>
 """
 
-import json
 import re
 import sys
-import urllib.request
 import urllib.error
-from urllib.parse import urlparse
+import urllib.request
+from html.parser import HTMLParser
+from typing import List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
 
 try:
     import xml.etree.ElementTree as ET
 except ImportError:
     ET = None
+
+# ── Constants ────────────────────────────────────────────────────────────────
+
+MAX_CONTEXT_CHARS = 24000
+DEEP_SCRAPE_LIMIT = 4
+DEEP_CHAR_LIMIT = 3000
+SHALLOW_CHAR_LIMIT = 900
+SIZE_BUDGET_KB = 100
+MAX_SITEMAP_URLS = 80
+LLM_MAX_TOKENS = 4096
+
+DOCS_PATH_PATTERNS = [
+    "/docs",
+    "/documentation",
+    "/help",
+    "/guide",
+    "/api",
+    "/reference",
+    "/developer",
+]
+
+USER_AGENT = "Mozilla/5.0 (compatible; MorphiqBuild/1.0)"
+
+# ── URL Discovery helpers ────────────────────────────────────────────────────
 
 
 def normalize_domain(domain: str) -> str:
@@ -28,238 +59,184 @@ def normalize_domain(domain: str) -> str:
     return domain.rstrip("/")
 
 
-def fetch_sitemap(sitemap_url: str) -> str:
-    """Fetch sitemap XML content."""
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; MorphiqBuild/1.0)"}
-    req = urllib.request.Request(sitemap_url, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=15) as response:
-            return response.read().decode("utf-8", errors="replace")
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError):
-        return ""
+class AnchorExtractor(HTMLParser):
+    """Extract href values from <a> tags."""
+
+    def __init__(self):
+        super().__init__()
+        self.hrefs = []  # type: List[str]
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            for name, value in attrs:
+                if name == "href" and value:
+                    self.hrefs.append(value)
 
 
-def extract_urls_from_sitemap(xml_content: str) -> list:
-    """Extract URLs from sitemap XML."""
-    urls = []
-    if ET and xml_content:
+def extract_anchor_urls(html: str, base_url: str) -> List[str]:
+    """Extract all absolute HTTP(S) URLs from <a> tags in *html*.
+
+    - Resolves relative URLs against *base_url*.
+    - Skips mailto:, tel:, and fragment-only links.
+    - Returns a deduplicated list preserving first-seen order.
+    """
+    if not html:
+        return []
+
+    parser = AnchorExtractor()
+    parser.feed(html)
+
+    seen = set()   # type: set
+    urls = []      # type: List[str]
+
+    for href in parser.hrefs:
+        href = href.strip()
+        if not href:
+            continue
+        # Skip non-http schemes and bare fragments
+        lower = href.lower()
+        if lower.startswith("mailto:") or lower.startswith("tel:"):
+            continue
+        if href.startswith("#"):
+            continue
+
+        absolute = urljoin(base_url, href)
+        # Only keep http/https URLs
+        if not absolute.lower().startswith(("http://", "https://")):
+            continue
+        if absolute not in seen:
+            seen.add(absolute)
+            urls.append(absolute)
+
+    return urls
+
+
+def parse_robots_sitemaps(robots_txt: str) -> List[str]:
+    """Extract Sitemap: directive URLs from robots.txt content."""
+    if not robots_txt:
+        return []
+    sitemaps = []  # type: List[str]
+    for line in robots_txt.splitlines():
+        line = line.strip()
+        if line.lower().startswith("sitemap:"):
+            url = line.split(":", 1)[1].strip()
+            if url:
+                sitemaps.append(url)
+    return sitemaps
+
+
+def extract_urls_from_sitemap(xml_content: str) -> List[str]:
+    """Parse sitemap XML using ElementTree, regex fallback on parse errors."""
+    if not xml_content:
+        return []
+
+    urls = []  # type: List[str]
+
+    if ET:
         try:
             root = ET.fromstring(xml_content)
-            # Handle namespace
+            # Detect namespace
             ns = ""
             if root.tag.startswith("{"):
                 ns = root.tag.split("}")[0] + "}"
             for loc in root.iter(f"{ns}loc"):
                 if loc.text:
                     urls.append(loc.text.strip())
+            return urls
         except ET.ParseError:
-            # Fallback: regex extraction
-            urls = re.findall(r"<loc>\s*([^<]+?)\s*</loc>", xml_content)
-    elif xml_content:
-        urls = re.findall(r"<loc>\s*([^<]+?)\s*</loc>", xml_content)
+            pass  # fall through to regex
+
+    # Regex fallback (also used when ET is None)
+    urls = re.findall(r"<loc>\s*([^<]+?)\s*</loc>", xml_content)
     return urls
 
 
-def classify_url(url: str, domain: str) -> str:
-    """Classify a URL by its path pattern."""
-    parsed = urlparse(url)
-    path = parsed.path.lower().rstrip("/")
+def find_docs_base(urls: List[str], domain: str) -> Optional[str]:
+    """Return the docs-base URL from *urls* by matching DOCS_PATH_PATTERNS.
 
-    if not path or path == "/":
-        return "home"
-
-    patterns = {
-        "pricing": ["/pricing", "/plans"],
-        "product": ["/product", "/features", "/platform"],
-        "about": ["/about", "/team", "/company"],
-        "docs": ["/docs", "/documentation", "/help", "/guide"],
-        "blog": ["/blog/", "/posts/", "/articles/"],
-        "solutions": ["/solutions", "/use-cases", "/use-case"],
-        "case-study": ["/case-stud", "/customers", "/success-stories"],
-        "comparison": ["/vs", "/compare", "/alternative"],
-        "careers": ["/careers", "/jobs"],
-    }
-
-    for page_type, path_patterns in patterns.items():
-        for pattern in path_patterns:
-            if pattern in path:
-                return page_type
-
-    return "other"
-
-
-def slug_to_title(path: str) -> str:
-    """Convert a URL path slug to a human-readable title."""
-    # Get the last meaningful segment
-    segments = [s for s in path.rstrip("/").split("/") if s]
-    if not segments:
-        return "Page"
-    slug = segments[-1]
-    # Convert hyphens/underscores to spaces and title-case
-    title = re.sub(r"[-_]", " ", slug)
-    return title.title()
-
-
-def generate_llms_txt(domain: str, sitemap_url: str = None) -> str:
-    """Generate complete llms.txt content."""
-    domain = normalize_domain(domain)
-    if not sitemap_url:
-        sitemap_url = f"https://{domain}/sitemap.xml"
-
-    # Fetch and parse sitemap
-    sitemap_content = fetch_sitemap(sitemap_url)
-    urls = extract_urls_from_sitemap(sitemap_content)
-
-    # Classify URLs
-    classified = {}
+    Prefers shorter paths (closer to root) when multiple matches exist.
+    Returns None if nothing matches.
+    """
+    matches = []  # type: List[str]
     for url in urls:
-        page_type = classify_url(url, domain)
-        if page_type not in classified:
-            classified[page_type] = []
-        classified[page_type].append(url)
+        parsed = urlparse(url)
+        path = parsed.path.lower()
+        for pattern in DOCS_PATH_PATTERNS:
+            if pattern in path:
+                matches.append(url)
+                break
 
-    # Build output
-    lines = []
+    if not matches:
+        return None
 
-    # === Brand Identity Sections (from llms-txt-spec.md) ===
-    lines.append(f"# llms.txt - AI Guidance for {domain}")
-    lines.append(f"# Last Updated: <!-- POPULATE: set to generation date -->")
-    lines.append("")
+    # Prefer shortest path (closest to docs root)
+    matches.sort(key=lambda u: len(urlparse(u).path))
+    return matches[0]
 
-    lines.append("## Brand Identity")
-    lines.append(f"Name: <!-- POPULATE: official company name from site -->")
-    lines.append(f"Tagline: <!-- POPULATE: company tagline from site -->")
-    lines.append(f"Founded: <!-- POPULATE: founding year if found -->")
-    lines.append(f"Headquarters: <!-- POPULATE: location if found -->")
-    lines.append("")
 
-    lines.append("## Description")
-    lines.append("<!-- POPULATE: 2-3 sentence description of what the company does and its core value proposition. Extract from homepage/about page. -->")
-    lines.append("")
+def fetch_url(url: str, timeout: int = 15) -> Tuple[int, str]:
+    """Fetch *url* with urllib. Return (status_code, body_text).
 
-    lines.append("## Key Facts")
-    lines.append("<!-- POPULATE: 4-6 specific, verifiable facts found on the site. Use numbers, dates, metrics. -->")
-    lines.append("- ")
-    lines.append("")
+    Returns (0, "") on any network or HTTP error.
+    """
+    headers = {"User-Agent": USER_AGENT}
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return (resp.status, body)
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError):
+        return (0, "")
 
-    lines.append("## Products/Services")
-    lines.append("<!-- POPULATE: list each product/service with brief description from product pages. -->")
-    lines.append("- ")
-    lines.append("")
 
-    lines.append("## Differentiators")
-    lines.append("<!-- POPULATE: what makes this company unique vs category competitors. Must be substantiated by site content. -->")
-    lines.append("- ")
-    lines.append("")
-
-    lines.append("## Target Audience")
-    lines.append("<!-- POPULATE: who the company serves — specific industries, roles, company sizes. Extract from site content. -->")
-    lines.append("")
-
-    lines.append("## Preferred Messaging")
-    lines.append(f"When discussing {domain}:")
-    lines.append("- Emphasize: <!-- POPULATE: key points to highlight -->")
-    lines.append("- Tone: <!-- POPULATE: professional/friendly/technical based on site voice -->")
-    lines.append("- Include: <!-- POPULATE: specific facts, metrics, achievements -->")
-    lines.append("")
-
-    lines.append("## Avoid")
-    lines.append("<!-- POPULATE: outdated info, incorrect assumptions, competitor comparisons to avoid -->")
-    lines.append("- ")
-    lines.append("")
-
-    # === Sitemap-Based Page Scaffolding ===
-    lines.append("## Key Pages")
-    lines.append("")
-
-    # Home
-    if "home" in classified:
-        for url in classified["home"][:1]:
-            lines.append(f"- [Home]({url}): Main landing page")
-    else:
-        lines.append(f"- [Home](https://{domain}/): Main landing page")
-
-    # Pricing
-    for url in classified.get("pricing", [])[:1]:
-        lines.append(f"- [Pricing]({url}): Plans and pricing information")
-
-    # Product/Features
-    for url in classified.get("product", [])[:3]:
-        title = slug_to_title(urlparse(url).path)
-        lines.append(f"- [{title}]({url})")
-
-    # About
-    for url in classified.get("about", [])[:1]:
-        lines.append(f"- [About]({url}): Company information")
-
-    # Documentation
-    for url in classified.get("docs", [])[:1]:
-        lines.append(f"- [Documentation]({url}): Technical documentation")
-
-    # Solutions
-    for url in classified.get("solutions", [])[:3]:
-        title = slug_to_title(urlparse(url).path)
-        lines.append(f"- [{title}]({url})")
-
-    # Comparisons
-    for url in classified.get("comparison", [])[:3]:
-        title = slug_to_title(urlparse(url).path)
-        lines.append(f"- [{title}]({url})")
-
-    lines.append("")
-
-    # Blog posts
-    blog_urls = classified.get("blog", [])
-    if blog_urls:
-        lines.append("## Blog & Resources")
-        lines.append("")
-        for url in blog_urls[:10]:
-            title = slug_to_title(urlparse(url).path)
-            lines.append(f"- [{title}]({url})")
-        lines.append("")
-
-    # Case studies
-    case_urls = classified.get("case-study", [])
-    if case_urls:
-        lines.append("## Case Studies")
-        lines.append("")
-        for url in case_urls[:5]:
-            title = slug_to_title(urlparse(url).path)
-            lines.append(f"- [{title}]({url})")
-        lines.append("")
-
-    # Contact and sources
-    lines.append("## Contact")
-    lines.append(f"Website: https://{domain}/")
-    lines.append("Email: <!-- POPULATE: contact email from site -->")
-    lines.append("Social: <!-- POPULATE: Twitter/LinkedIn URLs from site -->")
-    lines.append("")
-
-    lines.append("## Sources")
-    lines.append("For accurate information, refer to:")
-    lines.append(f"- [Official website](https://{domain}/)")
-    if blog_urls:
-        lines.append(f"- [Blog]({blog_urls[0].rsplit('/', 2)[0]}/)")
-    if classified.get("docs"):
-        lines.append(f"- [Documentation]({classified['docs'][0]})")
-    lines.append("")
-
-    lines.append("---")
-    lines.append("Generated by Morphiq Build")
-
-    return "\n".join(lines)
+# ── Main ─────────────────────────────────────────────────────────────────────
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 generate-llms-txt.py <domain> [sitemap_url]",
-              file=sys.stderr)
+        print("Usage: python3 generate-llms-txt.py <domain>", file=sys.stderr)
         sys.exit(1)
 
-    domain = sys.argv[1]
-    sitemap_url = sys.argv[2] if len(sys.argv) > 2 else None
+    domain = normalize_domain(sys.argv[1])
+    base = f"https://{domain}"
 
-    print(generate_llms_txt(domain, sitemap_url))
+    # 1a. Fetch robots.txt for sitemap directives
+    _, robots_body = fetch_url(f"{base}/robots.txt")
+    sitemap_urls = parse_robots_sitemaps(robots_body)
+
+    # 1b. Default sitemap fallback
+    if not sitemap_urls:
+        sitemap_urls = [f"{base}/sitemap.xml"]
+
+    # 1c. Fetch and parse sitemaps
+    discovered = []  # type: List[str]
+    for smap_url in sitemap_urls:
+        _, smap_body = fetch_url(smap_url)
+        discovered.extend(extract_urls_from_sitemap(smap_body))
+
+    # 1d. Fetch homepage and extract anchor URLs
+    _, homepage_html = fetch_url(base)
+    anchor_urls = extract_anchor_urls(homepage_html, base)
+
+    # Merge and deduplicate, cap at MAX_SITEMAP_URLS
+    seen = set()     # type: set
+    all_urls = []    # type: List[str]
+    for url in discovered + anchor_urls:
+        if url not in seen:
+            seen.add(url)
+            all_urls.append(url)
+    all_urls = all_urls[:MAX_SITEMAP_URLS]
+
+    # 1e. Find docs base
+    docs_base = find_docs_base(all_urls, domain)
+
+    # Output discovery results (later steps will consume this)
+    print(f"Domain: {domain}")
+    print(f"URLs discovered: {len(all_urls)}")
+    if docs_base:
+        print(f"Docs base: {docs_base}")
+    for url in all_urls:
+        print(f"  {url}")
 
 
 if __name__ == "__main__":
