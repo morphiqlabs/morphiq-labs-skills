@@ -579,5 +579,63 @@ class TestBuildUserPrompt(unittest.TestCase):
         self.assertIn("Hard Requirements", prompt)
 
 
+# ── Task 5: LLM Call with Multi-Provider Fallback ─────────────────────────────
+
+
+class TestCallLlm(unittest.TestCase):
+    def setUp(self):
+        self.mod = load_module()
+        # Save originals
+        self._orig_anthropic = self.mod._call_anthropic
+        self._orig_openai = self.mod._call_openai
+        self._orig_gemini = self.mod._call_gemini
+
+    def tearDown(self):
+        self.mod._call_anthropic = self._orig_anthropic
+        self.mod._call_openai = self._orig_openai
+        self.mod._call_gemini = self._orig_gemini
+
+    def test_returns_text_on_first_provider_success(self):
+        self.mod._call_anthropic = lambda s, u, m: "```llms.txt\n# Test\n```"
+        result = self.mod.call_llm("system", "user")
+        self.assertIn("# Test", result)
+
+    def test_falls_back_on_failure(self):
+        call_order = []
+        def fail_anthropic(s, u, m): raise RuntimeError("fail")
+        def succeed_openai(s, u, m):
+            call_order.append("openai")
+            return "```llms.txt\n# Fallback\n```"
+        self.mod._call_anthropic = fail_anthropic
+        self.mod._call_openai = succeed_openai
+        result = self.mod.call_llm("system", "user")
+        self.assertIn("# Fallback", result)
+        self.assertIn("openai", call_order)
+
+    def test_returns_none_when_all_fail(self):
+        self.mod._call_anthropic = lambda s, u, m: (_ for _ in ()).throw(RuntimeError("a"))
+        self.mod._call_openai = lambda s, u, m: (_ for _ in ()).throw(RuntimeError("b"))
+        self.mod._call_gemini = lambda s, u, m: (_ for _ in ()).throw(RuntimeError("c"))
+        result = self.mod.call_llm("system", "user")
+        self.assertIsNone(result)
+
+    def test_does_not_call_later_providers_on_success(self):
+        called = []
+        self.mod._call_anthropic = lambda s, u, m: "ok"
+        self.mod._call_openai = lambda s, u, m: called.append("openai") or "x"
+        self.mod._call_gemini = lambda s, u, m: called.append("gemini") or "x"
+        self.mod.call_llm("system", "user")
+        self.assertEqual(called, [])
+
+    def test_passes_max_tokens(self):
+        captured = {}
+        def capture_anthropic(s, u, m):
+            captured["max_tokens"] = m
+            return "ok"
+        self.mod._call_anthropic = capture_anthropic
+        self.mod.call_llm("s", "u", max_tokens=8192)
+        self.assertEqual(captured["max_tokens"], 8192)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -638,6 +638,106 @@ def build_user_prompt(context, brand_info):
     return "\n".join(parts)
 
 
+# ── LLM Call with Multi-Provider Fallback ────────────────────────────────────
+
+
+def _call_anthropic(system_prompt, user_prompt, max_tokens):
+    # type: (str, str, int) -> str
+    """Call Anthropic Claude API. Tries claude-sonnet-4-5-20250514 then claude-sonnet-4-20250514."""
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    models = ["claude-sonnet-4-5-20250514", "claude-sonnet-4-20250514"]
+    last_err = None
+
+    for model in models:
+        try:
+            print(f"[llms-txt] Calling Anthropic model={model}", file=sys.stderr)
+            response = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            text = "".join(
+                block.text for block in response.content if hasattr(block, "text")
+            )
+            print(f"[llms-txt] Anthropic OK ({len(text)} chars)", file=sys.stderr)
+            return text
+        except Exception as exc:
+            last_err = exc
+            print(f"[llms-txt] Anthropic {model} failed: {exc}", file=sys.stderr)
+
+    raise last_err
+
+
+def _call_openai(system_prompt, user_prompt, max_tokens):
+    # type: (str, str, int) -> str
+    """Call OpenAI GPT-4o API."""
+    from openai import OpenAI
+
+    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+    model = "gpt-4o"
+
+    print(f"[llms-txt] Calling OpenAI model={model}", file=sys.stderr)
+    response = client.chat.completions.create(
+        model=model,
+        max_tokens=max_tokens,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    )
+    text = response.choices[0].message.content
+    print(f"[llms-txt] OpenAI OK ({len(text)} chars)", file=sys.stderr)
+    return text
+
+
+def _call_gemini(system_prompt, user_prompt, max_tokens):
+    # type: (str, str, int) -> str
+    """Call Google Gemini API."""
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
+    model = "gemini-2.5-flash"
+    content = system_prompt + "\n\n" + user_prompt
+
+    print(f"[llms-txt] Calling Gemini model={model}", file=sys.stderr)
+    response = client.models.generate_content(
+        model=model,
+        contents=content,
+        config=types.GenerateContentConfig(max_output_tokens=max_tokens),
+    )
+    text = response.text
+    print(f"[llms-txt] Gemini OK ({len(text)} chars)", file=sys.stderr)
+    return text
+
+
+def call_llm(system_prompt, user_prompt, max_tokens=LLM_MAX_TOKENS):
+    # type: (str, str, int) -> Optional[str]
+    """Call LLM with Anthropic -> OpenAI -> Gemini fallback chain.
+
+    Returns raw text on first success, or None if all providers fail.
+    """
+    providers = [
+        ("anthropic", _call_anthropic),
+        ("openai", _call_openai),
+        ("gemini", _call_gemini),
+    ]
+
+    for name, fn in providers:
+        try:
+            return fn(system_prompt, user_prompt, max_tokens)
+        except Exception as exc:
+            print(f"[llms-txt] Provider {name} failed: {exc}", file=sys.stderr)
+
+    return None
+
+
+# ── Context Collection Orchestrator ────────────────────────────────────────
+
+
 def collect_llms_context(root_url):
     # type: (str) -> Dict
     """Main enrichment orchestrator — discover, score, scrape, evidence.
