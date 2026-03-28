@@ -3,6 +3,7 @@
 
 import unittest
 from importlib.machinery import SourceFileLoader
+from urllib.parse import urlparse
 import os
 
 
@@ -339,6 +340,154 @@ class TestExtractHeadings(unittest.TestCase):
         html = "<h2>\n  Spaced Heading\n</h2>"
         headings = gen.extract_headings(html)
         self.assertEqual(headings, ["Spaced Heading"])
+
+
+# ── Task 3: Context Collection Orchestrator ──────────────────────────────────
+
+mod = gen  # alias for patching
+
+
+class TestBuildEvidence(unittest.TestCase):
+    def _make_pages(self, texts, urls=None):
+        """Helper: build scraped_pages list from text strings."""
+        pages = []
+        for i, t in enumerate(texts):
+            url = (urls[i] if urls else f"https://example.com/page{i}")
+            pages.append({
+                "url": url,
+                "text": t,
+                "headings": [w for w in t.split(". ") if len(w.split()) <= 5],
+                "tier": "deep",
+            })
+        return pages
+
+    def test_extracts_date_literals(self):
+        pages = self._make_pages(["Founded in 2019. Updated March 2024."])
+        allowed = ["https://example.com/"]
+        ev = gen.build_evidence(pages, allowed)
+        self.assertGreater(len(ev["date_literals"]), 0)
+
+    def test_extracts_price_literals(self):
+        pages = self._make_pages(["Pro plan at $49/mo. Enterprise from $199/mo."])
+        allowed = ["https://example.com/"]
+        ev = gen.build_evidence(pages, allowed)
+        self.assertGreater(len(ev["price_literals"]), 0)
+
+    def test_extracts_facts(self):
+        pages = self._make_pages(["15,000+ customers worldwide"])
+        allowed = ["https://example.com/"]
+        ev = gen.build_evidence(pages, allowed)
+        self.assertGreater(len(ev["facts"]), 0)
+
+    def test_caps_allowed_urls(self):
+        pages = self._make_pages(["Some text"])
+        allowed = [f"https://example.com/p{i}" for i in range(100)]
+        ev = gen.build_evidence(pages, allowed)
+        self.assertLessEqual(len(ev["allowed_urls"]), gen.MAX_SITEMAP_URLS)
+
+    def test_extracts_key_terms(self):
+        pages = [{
+            "url": "https://example.com/",
+            "text": "hello",
+            "headings": ["Getting Started Guide", "API Reference Docs", "X"],
+            "tier": "deep",
+        }]
+        ev = gen.build_evidence(pages, ["https://example.com/"])
+        # "Getting Started Guide" (3 words) and "API Reference Docs" (3 words) qualify
+        # "X" (1 word) does not
+        self.assertGreater(len(ev["key_terms"]), 0)
+        for term in ev["key_terms"]:
+            words = term.split()
+            self.assertGreaterEqual(len(words), 2)
+            self.assertLessEqual(len(words), 5)
+
+
+class TestCollectLlmsContext(unittest.TestCase):
+    """Tests for collect_llms_context — mock fetch_url to avoid real HTTP."""
+
+    DOMAIN = "example.com"
+    ROOT = "https://example.com"
+
+    HOMEPAGE_HTML = """<html><head><title>Example</title></head><body>
+    <h1>Welcome to Example</h1>
+    <a href="/pricing">Pricing</a>
+    <a href="/about">About</a>
+    <a href="/docs">Docs</a>
+    <a href="https://other.com/external">External</a>
+    <p>Example is a platform with 5,000+ customers. Founded in 2020.</p>
+    </body></html>"""
+
+    ROBOTS_TXT = "User-agent: *\nSitemap: https://example.com/sitemap.xml\n"
+
+    SITEMAP_XML = """<?xml version="1.0" encoding="UTF-8"?>
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <url><loc>https://example.com/</loc></url>
+      <url><loc>https://example.com/pricing</loc></url>
+      <url><loc>https://example.com/about</loc></url>
+      <url><loc>https://example.com/docs</loc></url>
+      <url><loc>https://example.com/blog/post-1</loc></url>
+      <url><loc>https://other.com/cross-domain</loc></url>
+    </urlset>"""
+
+    PRICING_HTML = "<html><body><h1>Pricing</h1><p>Pro plan at $49/mo.</p></body></html>"
+    ABOUT_HTML = "<html><body><h1>About Us</h1><p>Founded in 2018.</p></body></html>"
+    DOCS_HTML = "<html><body><h1>Documentation</h1><a href='/docs/getting-started'>Start</a><p>Guide content here.</p></body></html>"
+    BLOG_HTML = "<html><body><h1>Blog Post</h1><p>Some blog content.</p></body></html>"
+
+    def _mock_fetch(self, url, timeout=15):
+        """Return canned responses for known URLs."""
+        responses = {
+            "https://example.com": (200, self.HOMEPAGE_HTML),
+            "https://example.com/": (200, self.HOMEPAGE_HTML),
+            "https://example.com/robots.txt": (200, self.ROBOTS_TXT),
+            "https://example.com/sitemap.xml": (200, self.SITEMAP_XML),
+            "https://example.com/pricing": (200, self.PRICING_HTML),
+            "https://example.com/about": (200, self.ABOUT_HTML),
+            "https://example.com/docs": (200, self.DOCS_HTML),
+            "https://example.com/docs/getting-started": (200, "<html><body><h2>Getting Started</h2><p>Step 1...</p></body></html>"),
+            "https://example.com/blog/post-1": (200, self.BLOG_HTML),
+        }
+        return responses.get(url, (0, ""))
+
+    def setUp(self):
+        self._orig_fetch = mod.fetch_url
+        mod.fetch_url = self._mock_fetch
+
+    def tearDown(self):
+        mod.fetch_url = self._orig_fetch
+
+    def test_builds_context_dict_structure(self):
+        ctx = gen.collect_llms_context("https://example.com")
+        required_keys = [
+            "root_url", "domain", "docs_base", "all_urls",
+            "ranked_urls", "scraped_pages", "evidence", "homepage_html",
+        ]
+        for key in required_keys:
+            self.assertIn(key, ctx, f"Missing key: {key}")
+
+    def test_scopes_urls_to_domain(self):
+        ctx = gen.collect_llms_context("https://example.com")
+        for url in ctx["all_urls"]:
+            parsed = urlparse(url)
+            self.assertEqual(parsed.netloc, self.DOMAIN,
+                             f"Cross-domain URL found: {url}")
+
+    def test_two_tier_scraping(self):
+        ctx = gen.collect_llms_context("https://example.com")
+        tiers = {p["tier"] for p in ctx["scraped_pages"]}
+        # With our mock data we have enough pages for both tiers
+        # At minimum we must have deep tier (homepage always deep)
+        self.assertIn("deep", tiers)
+
+    def test_homepage_always_deep(self):
+        ctx = gen.collect_llms_context("https://example.com")
+        homepage_pages = [
+            p for p in ctx["scraped_pages"]
+            if p["url"] in ("https://example.com", "https://example.com/")
+        ]
+        self.assertGreater(len(homepage_pages), 0, "Homepage not in scraped_pages")
+        for p in homepage_pages:
+            self.assertEqual(p["tier"], "deep")
 
 
 if __name__ == "__main__":

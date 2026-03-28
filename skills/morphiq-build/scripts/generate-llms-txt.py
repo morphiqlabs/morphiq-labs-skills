@@ -15,12 +15,16 @@ This module currently implements Step 1 (URL Discovery).
 Usage: python3 generate-llms-txt.py <domain>
 """
 
+import argparse
+import json
+import os
 import re
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from html.parser import HTMLParser
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 try:
@@ -351,6 +355,231 @@ def extract_headings(html: str) -> List[str]:
             headings.append(text)
 
     return headings
+
+
+# ── Evidence Patterns ──────────────────────────────────────────────────────
+
+DATE_PATTERN = re.compile(
+    r"\b(?:"
+    r"\d{4}[-/]\d{1,2}[-/]\d{1,2}"
+    r"|(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}"
+    r"|(?:Founded|Established|Since)\s+(?:in\s+)?\d{4}"
+    r")\b",
+    re.IGNORECASE,
+)
+
+PRICE_PATTERN = re.compile(
+    r"\$\d[\d,]*(?:\.\d{2})?(?:/(?:mo|month|yr|year|user|seat))?"
+    r"|free\s+(?:plan|tier|to start)",
+    re.IGNORECASE,
+)
+
+FACT_PATTERN = re.compile(
+    r"\b\d[\d,]*\+?\s*(?:customers|users|companies|businesses|employees|countries|integrations|clients)"
+    r"|\b\d[\d,]*%\s+\w+",
+    re.IGNORECASE,
+)
+
+
+# ── Context Collection Orchestrator ────────────────────────────────────────
+
+
+def build_evidence(scraped_pages, allowed_urls):
+    # type: (List[Dict], List[str]) -> Dict
+    """Build grounding evidence from scraped content.
+
+    Returns dict with: allowed_urls (capped at MAX_SITEMAP_URLS),
+    date_literals, price_literals, headings (capped at 50),
+    facts (capped at 20), key_terms (capped at 30).
+    """
+    date_literals = []   # type: List[str]
+    price_literals = []  # type: List[str]
+    facts = []           # type: List[str]
+    all_headings = []    # type: List[str]
+
+    seen_dates = set()   # type: set
+    seen_prices = set()  # type: set
+    seen_facts = set()   # type: set
+
+    for page in scraped_pages:
+        text = page.get("text", "")
+        headings = page.get("headings", [])
+
+        for m in DATE_PATTERN.finditer(text):
+            val = m.group()
+            if val not in seen_dates:
+                seen_dates.add(val)
+                date_literals.append(val)
+
+        for m in PRICE_PATTERN.finditer(text):
+            val = m.group()
+            if val not in seen_prices:
+                seen_prices.add(val)
+                price_literals.append(val)
+
+        for m in FACT_PATTERN.finditer(text):
+            val = m.group()
+            if val not in seen_facts:
+                seen_facts.add(val)
+                facts.append(val)
+
+        all_headings.extend(headings)
+
+    # Deduplicate headings preserving order
+    seen_h = set()  # type: set
+    unique_headings = []  # type: List[str]
+    for h in all_headings:
+        if h not in seen_h:
+            seen_h.add(h)
+            unique_headings.append(h)
+
+    # Key terms: headings with 2-5 words
+    key_terms = []  # type: List[str]
+    seen_terms = set()  # type: set
+    for h in unique_headings:
+        words = h.split()
+        if 2 <= len(words) <= 5 and h not in seen_terms:
+            seen_terms.add(h)
+            key_terms.append(h)
+
+    return {
+        "allowed_urls": allowed_urls[:MAX_SITEMAP_URLS],
+        "date_literals": date_literals,
+        "price_literals": price_literals,
+        "headings": unique_headings[:50],
+        "facts": facts[:20],
+        "key_terms": key_terms[:30],
+    }
+
+
+def collect_llms_context(root_url):
+    # type: (str) -> Dict
+    """Main enrichment orchestrator — discover, score, scrape, evidence.
+
+    Returns dict with: root_url, domain, docs_base, all_urls,
+    ranked_urls, scraped_pages, evidence, homepage_html.
+    """
+    parsed_root = urlparse(root_url)
+    domain = parsed_root.netloc
+    base_scheme = parsed_root.scheme or "https"
+    base = f"{base_scheme}://{domain}"
+
+    print(f"[llms-txt] Fetching homepage: {base}", file=sys.stderr)
+
+    # ── 1. Homepage ────────────────────────────────────────────────────
+    _, homepage_html = fetch_url(base)
+    homepage_nav_urls = extract_anchor_urls(homepage_html, base)
+
+    # ── 2. Robots.txt → sitemaps ───────────────────────────────────────
+    print(f"[llms-txt] Fetching robots.txt", file=sys.stderr)
+    _, robots_body = fetch_url(f"{base}/robots.txt")
+    sitemap_locs = parse_robots_sitemaps(robots_body)
+
+    if not sitemap_locs:
+        sitemap_locs = [f"{base}/sitemap.xml"]
+
+    # ── 3. Crawl sitemaps ──────────────────────────────────────────────
+    sitemap_urls = []  # type: List[str]
+    for smap_url in sitemap_locs:
+        print(f"[llms-txt] Fetching sitemap: {smap_url}", file=sys.stderr)
+        _, smap_body = fetch_url(smap_url)
+        sitemap_urls.extend(extract_urls_from_sitemap(smap_body))
+
+    # ── 4. Merge, scope to domain, deduplicate ────────────────────────
+    seen = set()       # type: set
+    all_urls = []      # type: List[str]
+    for url in sitemap_urls + homepage_nav_urls:
+        p = urlparse(url)
+        if p.netloc != domain:
+            continue
+        if url not in seen:
+            seen.add(url)
+            all_urls.append(url)
+
+    # ── 5. Docs base + docs nav links ─────────────────────────────────
+    docs_base = find_docs_base(all_urls, domain)
+    if docs_base:
+        print(f"[llms-txt] Docs base: {docs_base}", file=sys.stderr)
+        _, docs_html = fetch_url(docs_base)
+        docs_nav_urls = extract_anchor_urls(docs_html, docs_base)
+        for url in docs_nav_urls:
+            p = urlparse(url)
+            if p.netloc == domain and url not in seen:
+                seen.add(url)
+                all_urls.append(url)
+
+    # ── 6. Score and rank ──────────────────────────────────────────────
+    nav_set = set(homepage_nav_urls)
+    ranked_urls = sorted(
+        all_urls,
+        key=lambda u: score_url(u, domain, nav_urls=nav_set),
+        reverse=True,
+    )
+
+    print(f"[llms-txt] {len(ranked_urls)} URLs ranked, starting scrape", file=sys.stderr)
+
+    # ── 7. Two-tier scraping ───────────────────────────────────────────
+    scraped_pages = []  # type: List[Dict]
+    total_chars = 0
+
+    # Homepage always first, deep tier
+    homepage_text = extract_page_text(homepage_html, max_chars=DEEP_CHAR_LIMIT)
+    homepage_headings = extract_headings(homepage_html)
+    scraped_pages.append({
+        "url": base,
+        "text": homepage_text,
+        "headings": homepage_headings,
+        "tier": "deep",
+    })
+    total_chars += len(homepage_text)
+
+    # Filter out homepage from ranked list to avoid double-scraping
+    homepage_variants = {base, base + "/"}
+    remaining = [u for u in ranked_urls if u not in homepage_variants]
+
+    deep_count = 0
+    for url in remaining:
+        if total_chars >= MAX_CONTEXT_CHARS:
+            break
+
+        if deep_count < DEEP_SCRAPE_LIMIT:
+            tier = "deep"
+            char_limit = DEEP_CHAR_LIMIT
+            deep_count += 1
+        else:
+            tier = "shallow"
+            char_limit = SHALLOW_CHAR_LIMIT
+
+        status, html = fetch_url(url)
+        if status == 0 or not html:
+            continue
+
+        text = extract_page_text(html, max_chars=char_limit)
+        headings = extract_headings(html)
+
+        scraped_pages.append({
+            "url": url,
+            "text": text,
+            "headings": headings,
+            "tier": tier,
+        })
+        total_chars += len(text)
+
+    print(f"[llms-txt] Scraped {len(scraped_pages)} pages ({total_chars} chars)", file=sys.stderr)
+
+    # ── 8. Build evidence ──────────────────────────────────────────────
+    evidence = build_evidence(scraped_pages, all_urls)
+
+    return {
+        "root_url": root_url,
+        "domain": domain,
+        "docs_base": docs_base,
+        "all_urls": all_urls,
+        "ranked_urls": ranked_urls,
+        "scraped_pages": scraped_pages,
+        "evidence": evidence,
+        "homepage_html": homepage_html,
+    }
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
