@@ -735,6 +735,115 @@ def call_llm(system_prompt, user_prompt, max_tokens=LLM_MAX_TOKENS):
     return None
 
 
+# ── Output Validation ──────────────────────────────────────────────────────
+
+REQUIRED_SECTIONS = {
+    "overview": r"##\s+Overview",
+    "who we serve": r"##\s+Who\s+[Ww]e\s+[Ss]erve",
+    "products": r"##\s+Products",
+    "solutions": r"##\s+Solutions",
+    "key resources": r"##\s+Key\s+Resources",
+    "faqs": r"##\s+FAQs?",
+    "security": r"##\s+Security",
+    "pricing": r"##\s+Pricing",
+    "policies": r"##\s+Policies",
+}
+
+FAQ_PATTERN = re.compile(
+    r"\*\*Q:\*\*.*?\*\*A:\*\*.*?\[Source\]\(https?://[^\)]+\)", re.DOTALL
+)
+URL_PATTERN = re.compile(r"https?://[^\s\)\]>\"]+")
+SITEMAP_SECTION = re.compile(
+    r"##\s+Sitemap.*?\n((?:- https?://[^\n]+\n?)+)", re.DOTALL
+)
+
+
+def extract_fenced_block(raw_text):
+    # type: (str) -> Optional[str]
+    """Extract content from a ```llms.txt fenced code block.
+
+    Returns the stripped content string, or None if not exactly one
+    matching block or if the content is empty after stripping.
+    """
+    matches = re.findall(r"```llms\.txt\n(.*?)```", raw_text, re.DOTALL)
+    if len(matches) != 1:
+        return None
+    content = matches[0].strip()
+    if not content:
+        return None
+    return content
+
+
+def validate_llms_txt(content, root_url, docs_base):
+    # type: (str, str, Optional[str]) -> List[str]
+    """Validate llms.txt content against the spec.
+
+    Returns a list of error strings (empty list means valid).
+    """
+    errors = []  # type: List[str]
+
+    # a. Size check
+    size_kb = len(content.encode("utf-8")) / 1024
+    if size_kb > SIZE_BUDGET_KB:
+        errors.append(
+            f"Size {size_kb:.1f} KB exceeds budget of {SIZE_BUDGET_KB} KB"
+        )
+
+    # b. Required sections
+    for section_name, pattern in REQUIRED_SECTIONS.items():
+        if not re.search(pattern, content, re.IGNORECASE):
+            errors.append(f"Missing required section: {section_name}")
+
+    # c. FAQ format: need >= 3 Q/A pairs with Source links
+    faq_matches = FAQ_PATTERN.findall(content)
+    if len(faq_matches) < 3:
+        errors.append(
+            f"FAQ section has {len(faq_matches)} Q/A pairs, need at least 3"
+        )
+
+    # d. URL scope: all URLs must match root_url or docs_base domain
+    root_domain = urlparse(root_url).netloc
+    allowed_domains = {root_domain}
+    if docs_base:
+        docs_domain = urlparse(docs_base).netloc
+        allowed_domains.add(docs_domain)
+
+    for m in URL_PATTERN.finditer(content):
+        url = m.group()
+        domain = urlparse(url).netloc
+        if domain not in allowed_domains:
+            errors.append(
+                f"URL out of scope: {url} (domain {domain} not in {allowed_domains})"
+            )
+            break  # report first offender only
+
+    # e. Sitemap count: 8-15 URLs
+    sitemap_match = SITEMAP_SECTION.search(content)
+    if sitemap_match:
+        sitemap_text = sitemap_match.group(1)
+        sitemap_urls = URL_PATTERN.findall(sitemap_text)
+        if len(sitemap_urls) < 8 or len(sitemap_urls) > 15:
+            errors.append(
+                f"Sitemap has {len(sitemap_urls)} URLs, need 8-15"
+            )
+    else:
+        errors.append("Missing Sitemap section with URL list")
+
+    # f. Duplicate URLs: any URL appearing >3 times
+    from collections import Counter
+
+    all_urls = URL_PATTERN.findall(content)
+    url_counts = Counter(all_urls)
+    for url, count in url_counts.items():
+        if count > 3:
+            errors.append(
+                f"Duplicate URL appears {count} times: {url}"
+            )
+            break  # report first offender only
+
+    return errors
+
+
 # ── Context Collection Orchestrator ────────────────────────────────────────
 
 

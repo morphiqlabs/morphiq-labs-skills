@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for generate-llms-txt.py — URL Discovery layer (Task 1)."""
 
+import re
 import unittest
 from importlib.machinery import SourceFileLoader
 from urllib.parse import urlparse
@@ -635,6 +636,119 @@ class TestCallLlm(unittest.TestCase):
         self.mod._call_anthropic = capture_anthropic
         self.mod.call_llm("s", "u", max_tokens=8192)
         self.assertEqual(captured["max_tokens"], 8192)
+
+
+# ── Task 6: Output Validation ───────────────────────────────────────────────
+
+
+class TestExtractFencedBlock(unittest.TestCase):
+    def test_extracts_content(self):
+        raw = 'Some text\n```llms.txt\n# Brand\n## Overview\n```\nMore text'
+        content = mod.extract_fenced_block(raw)
+        self.assertEqual(content, "# Brand\n## Overview")
+
+    def test_returns_none_on_missing(self):
+        self.assertIsNone(mod.extract_fenced_block("no fenced block here"))
+
+    def test_returns_none_on_multiple(self):
+        raw = '```llms.txt\n# A\n```\n```llms.txt\n# B\n```'
+        self.assertIsNone(mod.extract_fenced_block(raw))
+
+    def test_returns_none_on_empty_content(self):
+        raw = '```llms.txt\n   \n```'
+        self.assertIsNone(mod.extract_fenced_block(raw))
+
+
+class TestValidateLlmsTxt(unittest.TestCase):
+    # Helper: build a valid llms.txt string for testing
+    def _valid_content(self):
+        return """# Ramp
+
+> The corporate card.
+
+## Overview
+- Finance platform
+
+## Who We Serve
+- Finance teams
+
+## Products / Capabilities
+- **Card** — [Card](https://ramp.com/card)
+
+## Solutions / Use Cases
+- Reducing spend
+
+## Key Resources
+- [Docs](https://ramp.com/docs)
+
+## FAQs
+- **Q:** Cost?
+  **A:** Free. [Source](https://ramp.com/pricing)
+- **Q:** Integrations?
+  **A:** Yes. [Source](https://ramp.com/integrations)
+- **Q:** Security?
+  **A:** SOC 2. [Source](https://ramp.com/security)
+
+## Security & Compliance
+- SOC 2
+
+## Pricing & Plans
+- Free
+- [Pricing](https://ramp.com/pricing)
+
+## Policies
+- [Privacy](https://ramp.com/privacy)
+
+## Research / Blog
+- [Blog](https://ramp.com/blog)
+
+## Sitemap (canonical pages)
+- https://ramp.com
+- https://ramp.com/pricing
+- https://ramp.com/card
+- https://ramp.com/docs
+- https://ramp.com/blog
+- https://ramp.com/privacy
+- https://ramp.com/security
+- https://ramp.com/about
+
+## Citation Guidance
+Cite: "Ramp" (https://ramp.com)
+
+---
+*Last updated: 2026-03-28*"""
+
+    def test_valid_passes(self):
+        errors = mod.validate_llms_txt(self._valid_content(), "https://ramp.com", "https://ramp.com/docs")
+        self.assertEqual(errors, [])
+
+    def test_detects_missing_section(self):
+        # Remove FAQs section entirely
+        content = re.sub(r"## FAQs.*?(?=## Security)", "", self._valid_content(), flags=re.DOTALL)
+        errors = mod.validate_llms_txt(content, "https://ramp.com", None)
+        self.assertTrue(any("faq" in e.lower() for e in errors))
+
+    def test_detects_out_of_scope_url(self):
+        content = self._valid_content() + "\n[Bad](https://evil.com/hack)"
+        errors = mod.validate_llms_txt(content, "https://ramp.com", None)
+        self.assertTrue(any("scope" in e.lower() or "evil" in e.lower() for e in errors))
+
+    def test_detects_oversized(self):
+        content = self._valid_content() + "\n" + "x" * 120_000
+        errors = mod.validate_llms_txt(content, "https://ramp.com", None)
+        self.assertTrue(any("size" in e.lower() or "kb" in e.lower() for e in errors))
+
+    def test_detects_insufficient_faqs(self):
+        # Keep FAQs header but only 1 pair
+        content = self._valid_content()
+        # Replace FAQ section with just 1 Q/A
+        content = re.sub(
+            r"## FAQs.*?(?=## Security)",
+            "## FAQs\n- **Q:** Cost?\n  **A:** Free. [Source](https://ramp.com/pricing)\n\n",
+            content, flags=re.DOTALL
+        )
+        errors = mod.validate_llms_txt(content, "https://ramp.com", None)
+        self.assertTrue(any("faq" in e.lower() for e in errors))
 
 
 if __name__ == "__main__":
