@@ -1244,54 +1244,241 @@ def collect_llms_context(root_url):
     }
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+# ── Brand Detection ──────────────────────────────────────────────────────
+
+
+def detect_brand_from_homepage(html, domain):
+    # type: (str, str) -> Dict[str, str]
+    """Best-effort brand name and tagline extraction from homepage HTML.
+
+    Strategy (in priority order for name):
+      1. <meta property="og:site_name" content="..."> → name
+      2. <title> tag split by common separators → first part = name, rest = tagline
+      3. Fallback name = domain
+
+    Strategy for tagline:
+      1. Title remainder (after separator split)
+      2. <meta property="og:description" content="...">
+      3. <meta name="description" content="...">
+
+    Returns dict with "name" and "tagline" keys.
+    """
+    name = ""
+    tagline = ""
+
+    # ── Try og:site_name for name ──────────────────────────────────────
+    og_site_match = re.search(
+        r'<meta\s+property=["\']og:site_name["\']\s+content=["\']([^"\']+)["\']',
+        html, re.IGNORECASE,
+    )
+    if og_site_match:
+        name = og_site_match.group(1).strip()
+
+    # ── Try <title> for name and tagline ───────────────────────────────
+    title_match = re.search(r"<title>([^<]+)</title>", html, re.IGNORECASE)
+    title_text = title_match.group(1).strip() if title_match else ""
+
+    if title_text:
+        # Split by common separators: ' — ', ' - ', ' | ', ' · '
+        separators = [" \u2014 ", " - ", " | ", " \u00b7 "]
+        for sep in separators:
+            if sep in title_text:
+                parts = title_text.split(sep, 1)
+                if not name:
+                    name = parts[0].strip()
+                if not tagline:
+                    tagline = parts[1].strip()
+                break
+
+    # ── Try og:description for tagline ─────────────────────────────────
+    if not tagline:
+        og_desc_match = re.search(
+            r'<meta\s+property=["\']og:description["\']\s+content=["\']([^"\']+)["\']',
+            html, re.IGNORECASE,
+        )
+        if og_desc_match:
+            tagline = og_desc_match.group(1).strip()
+
+    # ── Try meta description for tagline ───────────────────────────────
+    if not tagline:
+        meta_desc_match = re.search(
+            r'<meta\s+name=["\']description["\']\s+content=["\']([^"\']+)["\']',
+            html, re.IGNORECASE,
+        )
+        if meta_desc_match:
+            tagline = meta_desc_match.group(1).strip()
+
+    # ── Defaults ───────────────────────────────────────────────────────
+    if not name:
+        name = domain
+
+    return {"name": name, "tagline": tagline}
+
+
+# ── Main Orchestrator ────────────────────────────────────────────────────
+
+
+def generate_llms_txt(root_url, brand_info=None):
+    # type: (str, Optional[Dict]) -> Dict
+    """7-step pipeline orchestrator for generating llms.txt.
+
+    Steps:
+      1. Collect context (URL discovery, scoring, scraping, evidence)
+      2. Detect brand from homepage if not provided
+      3. Build system + user prompts
+      4. Call LLM
+      5. Extract, validate, optionally repair LLM output
+      6. Fall back to template if LLM path failed
+      7. Return result dict
+
+    Returns dict with keys: generated_output, output_type, script_source,
+    status, errors.
+    """
+    errors = []  # type: List[str]
+
+    # ── Step 1: Collect context ────────────────────────────────────────
+    print("[llms-txt] Step 1/7: Collecting context...", file=sys.stderr)
+    context = collect_llms_context(root_url)
+
+    # ── Step 2: Brand detection ────────────────────────────────────────
+    print("[llms-txt] Step 2/7: Detecting brand...", file=sys.stderr)
+    if brand_info is None:
+        homepage_html = context.get("homepage_html", "")
+        domain = context.get("domain", "")
+        brand_info = detect_brand_from_homepage(homepage_html, domain)
+
+    # ── Step 3: Build prompts ──────────────────────────────────────────
+    print("[llms-txt] Step 3/7: Building prompts...", file=sys.stderr)
+    system_prompt = build_system_prompt()
+    user_prompt = build_user_prompt(context, brand_info)
+
+    # ── Step 4: Call LLM ───────────────────────────────────────────────
+    print("[llms-txt] Step 4/7: Calling LLM...", file=sys.stderr)
+    raw_llm_output = call_llm(system_prompt, user_prompt, max_tokens=LLM_MAX_TOKENS)
+
+    # ── Step 5: Extract, validate, repair ──────────────────────────────
+    llm_content = None
+    if raw_llm_output:
+        print("[llms-txt] Step 5/7: Validating LLM output...", file=sys.stderr)
+        llm_content = extract_fenced_block(raw_llm_output)
+
+        if llm_content:
+            docs_base = context.get("docs_base")
+            validation_errors = validate_llms_txt(llm_content, root_url, docs_base)
+
+            if not validation_errors:
+                # Valid on first try
+                print("[llms-txt] Step 5/7: LLM output valid.", file=sys.stderr)
+                return {
+                    "generated_output": llm_content,
+                    "output_type": "code",
+                    "script_source": "llm",
+                    "status": "completed",
+                    "errors": [],
+                }
+            else:
+                # Attempt repair once
+                print(
+                    f"[llms-txt] Step 5/7: {len(validation_errors)} validation error(s), attempting repair...",
+                    file=sys.stderr,
+                )
+                repaired = repair_llms_txt(
+                    llm_content, validation_errors, system_prompt, user_prompt
+                )
+                if repaired:
+                    repair_errors = validate_llms_txt(repaired, root_url, docs_base)
+                    if not repair_errors:
+                        print("[llms-txt] Step 5/7: Repair succeeded.", file=sys.stderr)
+                        return {
+                            "generated_output": repaired,
+                            "output_type": "code",
+                            "script_source": "llm",
+                            "status": "completed",
+                            "errors": [],
+                        }
+                    else:
+                        errors.extend(repair_errors)
+                else:
+                    errors.extend(validation_errors)
+        else:
+            errors.append("Failed to extract fenced block from LLM output")
+    else:
+        print("[llms-txt] Step 4/7: LLM call returned nothing.", file=sys.stderr)
+        errors.append("LLM call returned no output")
+
+    # ── Step 6: Template fallback ──────────────────────────────────────
+    print("[llms-txt] Step 6/7: Falling back to template...", file=sys.stderr)
+    template_output = build_llms_txt_template(context, brand_info)
+
+    # ── Step 7: Return ─────────────────────────────────────────────────
+    print("[llms-txt] Step 7/7: Done.", file=sys.stderr)
+    return {
+        "generated_output": template_output,
+        "output_type": "code",
+        "script_source": "template",
+        "status": "completed",
+        "errors": errors,
+    }
+
+
+# ── CLI ──────────────────────────────────────────────────────────────────────
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 generate-llms-txt.py <domain>", file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Generate an optimised llms.txt for any domain."
+    )
+    parser.add_argument(
+        "root_url",
+        help="Root URL of the website (e.g. https://example.com or example.com)",
+    )
+    parser.add_argument(
+        "--brand", default=None, help="Override auto-detected brand name"
+    )
+    parser.add_argument(
+        "--tagline", default=None, help="Override auto-detected tagline"
+    )
+    parser.add_argument(
+        "--output",
+        default="-",
+        help="Output file path (default: - for stdout)",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Output full result dict as JSON instead of just llms.txt content",
+    )
 
-    domain = normalize_domain(sys.argv[1])
-    base = f"https://{domain}"
+    args = parser.parse_args()
 
-    # 1a. Fetch robots.txt for sitemap directives
-    _, robots_body = fetch_url(f"{base}/robots.txt")
-    sitemap_urls = parse_robots_sitemaps(robots_body)
+    # Normalize root_url: prepend https:// if no protocol
+    root_url = args.root_url
+    if not root_url.startswith(("http://", "https://")):
+        root_url = f"https://{root_url}"
 
-    # 1b. Default sitemap fallback
-    if not sitemap_urls:
-        sitemap_urls = [f"{base}/sitemap.xml"]
+    # Build brand_info override if any flags provided
+    brand_info = None
+    if args.brand or args.tagline:
+        brand_info = {
+            "name": args.brand or "",
+            "tagline": args.tagline or "",
+        }
 
-    # 1c. Fetch and parse sitemaps
-    discovered = []  # type: List[str]
-    for smap_url in sitemap_urls:
-        _, smap_body = fetch_url(smap_url)
-        discovered.extend(extract_urls_from_sitemap(smap_body))
+    result = generate_llms_txt(root_url, brand_info=brand_info)
 
-    # 1d. Fetch homepage and extract anchor URLs
-    _, homepage_html = fetch_url(base)
-    anchor_urls = extract_anchor_urls(homepage_html, base)
+    # Output
+    if args.json_output:
+        output_text = json.dumps(result, indent=2)
+    else:
+        output_text = result.get("generated_output", "")
 
-    # Merge and deduplicate, cap at MAX_SITEMAP_URLS
-    seen = set()     # type: set
-    all_urls = []    # type: List[str]
-    for url in discovered + anchor_urls:
-        if url not in seen:
-            seen.add(url)
-            all_urls.append(url)
-    all_urls = all_urls[:MAX_SITEMAP_URLS]
-
-    # 1e. Find docs base
-    docs_base = find_docs_base(all_urls, domain)
-
-    # Output discovery results (later steps will consume this)
-    print(f"Domain: {domain}")
-    print(f"URLs discovered: {len(all_urls)}")
-    if docs_base:
-        print(f"Docs base: {docs_base}")
-    for url in all_urls:
-        print(f"  {url}")
+    if args.output == "-":
+        print(output_text)
+    else:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(output_text)
+        print(f"[llms-txt] Written to {args.output}", file=sys.stderr)
 
 
 if __name__ == "__main__":

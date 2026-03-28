@@ -850,5 +850,125 @@ class TestBuildLlmsTxtTemplate(unittest.TestCase):
         self.assertIn("[Source]", template)
 
 
+# ── Task 8: Main Orchestrator & CLI ────────────────────────────────────────
+
+
+class TestDetectBrand(unittest.TestCase):
+    def test_extracts_from_title_with_separator(self):
+        html = '<html><head><title>Ramp — The Corporate Card</title></head></html>'
+        brand = mod.detect_brand_from_homepage(html, "ramp.com")
+        self.assertEqual(brand["name"], "Ramp")
+        self.assertIn("Corporate Card", brand["tagline"])
+
+    def test_prefers_og_site_name(self):
+        html = '<html><head><title>Page Title</title><meta property="og:site_name" content="BrandName"></head></html>'
+        brand = mod.detect_brand_from_homepage(html, "example.com")
+        self.assertEqual(brand["name"], "BrandName")
+
+    def test_falls_back_to_domain(self):
+        html = '<html><body>Hello</body></html>'
+        brand = mod.detect_brand_from_homepage(html, "example.com")
+        self.assertEqual(brand["name"], "example.com")
+
+    def test_meta_description_as_tagline(self):
+        html = '<html><head><meta name="description" content="Best platform ever"></head></html>'
+        brand = mod.detect_brand_from_homepage(html, "example.com")
+        self.assertEqual(brand["tagline"], "Best platform ever")
+
+
+class TestGenerateLlmsTxt(unittest.TestCase):
+    def setUp(self):
+        self.mod = load_module()
+        self._orig_fetch = self.mod.fetch_url
+        self._orig_llm = self.mod.call_llm
+        # Mock fetch_url
+        responses = {
+            "https://example.com": (200, '<html><head><title>ExCo — Platform</title></head><body><h1>ExCo</h1><a href="/pricing">P</a><a href="/docs">D</a></body></html>'),
+            "https://example.com/robots.txt": (200, "Sitemap: https://example.com/sitemap.xml"),
+            "https://example.com/sitemap.xml": (200, '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + ''.join(f'<url><loc>https://example.com/p{i}</loc></url>' for i in range(12)) + '</urlset>'),
+            "https://example.com/pricing": (200, '<h1>Pricing</h1><p>Free. Pro $49/mo.</p>'),
+            "https://example.com/docs": (200, '<h1>Docs</h1><p>Get started.</p>'),
+        }
+        self.mod.fetch_url = lambda url, timeout=15: responses.get(url, (404, ""))
+
+    def tearDown(self):
+        self.mod.fetch_url = self._orig_fetch
+        self.mod.call_llm = self._orig_llm
+
+    def test_llm_success_path(self):
+        # Mock call_llm to return valid llms.txt
+        valid_block = self._make_valid_block("ExCo", "https://example.com")
+        self.mod.call_llm = lambda s, u, max_tokens=4096: f"```llms.txt\n{valid_block}\n```"
+        result = self.mod.generate_llms_txt("https://example.com", brand_info={"name": "ExCo", "tagline": "Platform"})
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["script_source"], "llm")
+        self.assertIn("ExCo", result["generated_output"])
+
+    def test_template_fallback(self):
+        self.mod.call_llm = lambda s, u, max_tokens=4096: None  # all fail
+        result = self.mod.generate_llms_txt("https://example.com", brand_info={"name": "ExCo", "tagline": ""})
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["script_source"], "template")
+        self.assertNotIn("POPULATE", result["generated_output"])
+
+    def test_auto_detects_brand(self):
+        self.mod.call_llm = lambda s, u, max_tokens=4096: None
+        result = self.mod.generate_llms_txt("https://example.com")
+        # Should detect "ExCo" from <title>ExCo — Platform</title>
+        self.assertIn("ExCo", result["generated_output"])
+
+    def _make_valid_block(self, brand, root):
+        # Build a minimal valid llms.txt
+        pages = "\n".join(f"- {root}/p{i}" for i in range(8))
+        return f"""# {brand}
+
+> Platform for everything.
+
+## Overview
+- {brand} is a platform
+
+## Who We Serve
+- Developers
+
+## Products / Capabilities
+- **Platform** — core [Platform]({root}/product)
+
+## Solutions / Use Cases
+- Building apps
+
+## Key Resources
+- [Docs]({root}/docs)
+
+## FAQs
+- **Q:** What is {brand}?
+  **A:** A platform. [Source]({root})
+- **Q:** Cost?
+  **A:** Free. [Source]({root}/pricing)
+- **Q:** Docs?
+  **A:** Yes. [Source]({root}/docs)
+
+## Security & Compliance
+- Enterprise security
+
+## Pricing & Plans
+- Free
+- [Pricing]({root}/pricing)
+
+## Policies
+- [Privacy]({root}/privacy)
+
+## Research / Blog
+- [Blog]({root}/blog)
+
+## Sitemap (canonical pages)
+{pages}
+
+## Citation Guidance
+Cite: "{brand}" ({root})
+
+---
+*Last updated: 2026-03-28*"""
+
+
 if __name__ == "__main__":
     unittest.main()
