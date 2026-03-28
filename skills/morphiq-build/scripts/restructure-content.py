@@ -15,7 +15,7 @@ def fix_heading_hierarchy(content: str) -> tuple:
     lines = content.split("\n")
     changes = []
     h1_seen = False
-    expected_min_level = 1
+    max_level_seen = 0  # deepest heading level encountered so far
 
     for i, line in enumerate(lines):
         match = re.match(r'^(#{1,6})\s+(.+)$', line)
@@ -30,14 +30,28 @@ def fix_heading_hierarchy(content: str) -> tuple:
             if h1_seen:
                 lines[i] = f"## {text}"
                 changes.append(f"Line {i+1}: Demoted duplicate H1 to H2: '{text}'")
+                level = 2
             else:
                 h1_seen = True
-                expected_min_level = 2
+                max_level_seen = 1
+                continue
+
+        # Fix skipped levels (e.g., H1 → H3 without H2)
+        expected_max = max_level_seen + 1
+        if level > expected_max:
+            new_level = expected_max
+            lines[i] = f"{'#' * new_level} {text}"
+            changes.append(f"Line {i+1}: Fixed skipped level H{level} to H{new_level}: '{text}'")
+            level = new_level
+
+        max_level_seen = max(max_level_seen, level)
 
     return "\n".join(lines), changes
 
 
-def split_long_paragraphs(content: str, max_words: int = 75) -> tuple:
+def split_long_paragraphs(content: str, max_words: int = 100) -> tuple:
+    # max_words is a heuristic signal, not a hard rule — the real criterion is
+    # whether the paragraph contains multiple ideas that resist clean chunking.
     """Split paragraphs exceeding the word limit."""
     lines = content.split("\n\n")
     result = []
@@ -82,31 +96,6 @@ def split_long_paragraphs(content: str, max_words: int = 75) -> tuple:
     return "\n\n".join(result), changes
 
 
-def ensure_answer_first(content: str) -> tuple:
-    """Check that sections start with direct answers, not preamble."""
-    changes = []
-    sections = re.split(r'(^#{2,3}\s+.+$)', content, flags=re.MULTILINE)
-
-    # Analysis only — actual rewriting requires Claude
-    for i, section in enumerate(sections):
-        if re.match(r'^#{2,3}\s+', section):
-            # Check the next section (content after heading)
-            if i + 1 < len(sections):
-                body = sections[i + 1].strip()
-                first_para = body.split("\n\n")[0] if body else ""
-
-                # Flag preamble patterns
-                preamble_signals = [
-                    "in this section", "let's explore", "we will discuss",
-                    "before we", "it's important to note", "first, let's",
-                ]
-                if any(signal in first_para.lower() for signal in preamble_signals):
-                    heading_text = section.strip()
-                    changes.append(f"Section '{heading_text}' starts with preamble — needs direct answer opening")
-
-    return content, changes
-
-
 def add_missing_structure(content: str) -> tuple:
     """Identify missing structural elements."""
     changes = []
@@ -138,9 +127,6 @@ def restructure(content: str) -> dict:
 
     content, split_changes = split_long_paragraphs(content)
     all_changes.extend(split_changes)
-
-    content, answer_changes = ensure_answer_first(content)
-    all_changes.extend(answer_changes)
 
     content, structure_changes = add_missing_structure(content)
     all_changes.extend(structure_changes)

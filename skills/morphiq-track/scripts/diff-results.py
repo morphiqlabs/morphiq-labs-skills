@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """diff-results.py — Compare two analysis snapshots and compute deltas.
 
-Usage: python3 diff-results.py --current current.json --previous previous.json
-Output: JSON delta report with significant changes flagged
+Usage:
+  State-dir mode:  python3 diff-results.py --state-dir morphiq-track/
+  Legacy mode:     python3 diff-results.py --current current.json --previous previous.json
+
+With --state-dir, auto-resolves current/previous from manifest.json runs[0]/runs[1].
+Reads citations.json for previous citation state if available.
 """
 
 import argparse
 import json
+import os
 import sys
 
 SIGNIFICANCE_THRESHOLD = 5  # Minimum point change to flag
@@ -201,16 +206,89 @@ def generate_flagged_actions(technical_delta: dict, geo_delta: dict, sov_delta: 
     return actions
 
 
+def resolve_from_state_dir(state_dir):
+    """Resolve current and previous snapshots from manifest.json."""
+    manifest_path = os.path.join(state_dir, "manifest.json")
+    if not os.path.exists(manifest_path):
+        print(f"ERROR: {manifest_path} not found", file=sys.stderr)
+        sys.exit(1)
+
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+
+    runs = manifest.get("runs", [])
+    if len(runs) == 0:
+        print("ERROR: no runs in manifest", file=sys.stderr)
+        sys.exit(1)
+
+    current_path = runs[0].get("results_path")
+    if not current_path or not os.path.exists(current_path):
+        print(f"ERROR: current results not found at {current_path}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(current_path) as f:
+        current = json.load(f)
+
+    # Baseline run — no previous
+    if len(runs) < 2:
+        return current, None, manifest
+
+    previous_path = runs[1].get("results_path")
+    if not previous_path or not os.path.exists(previous_path):
+        return current, None, manifest
+
+    with open(previous_path) as f:
+        previous = json.load(f)
+
+    return current, previous, manifest
+
+
 def main():
     parser = argparse.ArgumentParser(description="Compare analysis snapshots")
-    parser.add_argument("--current", required=True, help="Current snapshot JSON")
-    parser.add_argument("--previous", required=True, help="Previous snapshot JSON")
+    parser.add_argument("--current", default=None, help="Current snapshot JSON")
+    parser.add_argument("--previous", default=None, help="Previous snapshot JSON")
+    parser.add_argument("--state-dir", default=None,
+                        help="State directory — auto-resolves current/previous from manifest.json")
     args = parser.parse_args()
 
-    with open(args.current) as f:
-        current = json.load(f)
-    with open(args.previous) as f:
-        previous = json.load(f)
+    # ── Resolve inputs ──────────────────────────────────────────────────
+    if args.state_dir:
+        current, previous, manifest = resolve_from_state_dir(args.state_dir)
+        if previous is None:
+            # Baseline run — output a baseline report with null deltas
+            report = {
+                "is_baseline": True,
+                "technical_deltas": None,
+                "geo_deltas": None,
+                "sov_deltas": None,
+                "citation_deltas": {
+                    "gained": current.get("citations", []),
+                    "lost": [],
+                    "stable": [],
+                    "total_current": len(current.get("citations", [])),
+                    "total_previous": 0,
+                    "net": len(current.get("citations", [])),
+                },
+                "flagged_actions": [],
+                "summary": {
+                    "significant_changes": 0,
+                    "citations_gained": len(current.get("citations", [])),
+                    "citations_lost": 0,
+                    "citations_net": len(current.get("citations", [])),
+                    "actions_count": 0,
+                    "feed_to_rank_count": 0,
+                },
+            }
+            print(json.dumps(report, indent=2))
+            return
+    else:
+        if not args.current or not args.previous:
+            print("ERROR: provide --state-dir or both --current and --previous", file=sys.stderr)
+            sys.exit(1)
+        with open(args.current) as f:
+            current = json.load(f)
+        with open(args.previous) as f:
+            previous = json.load(f)
 
     technical_delta = diff_scores(
         current.get("technical_scores", {}),

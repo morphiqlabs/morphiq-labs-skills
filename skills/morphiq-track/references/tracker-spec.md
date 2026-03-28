@@ -627,13 +627,42 @@ Every skill prepends a new row to Run History when it completes a run. The row c
 
 ---
 
+## Source of Truth: State Layer vs. Tracker
+
+The tracker and the JSON state layer (`morphiq-track/`) are complementary views of the same data. Each section has one canonical source:
+
+| Section | Source of Truth | Sync Direction |
+|---------|----------------|----------------|
+| §1 Score Summary | MORPHIQ-TRACKER.md (scan-owned) | Not in state layer |
+| §2 Score Breakdown | MORPHIQ-TRACKER.md (scan-owned) | Not in state layer |
+| §3 Open Issues | MORPHIQ-TRACKER.md (scan/build-owned) | Not in state layer |
+| §4 Resolved Issues | MORPHIQ-TRACKER.md (build/scan-owned) | Not in state layer |
+| §5 Share of Voice | Derived from `morphiq-track/results/` | **State → Tracker** |
+| §6 SoV Trend | `morphiq-track/manifest.json` + results | **State → Tracker** |
+| §7 Citation Analytics | `morphiq-track/citations.json` | **State → Tracker** |
+| §8 Tracked Prompts | `morphiq-track/prompts.json` | **State → Tracker** |
+| §9 Competitors | Derived from `morphiq-track/results/` | **State → Tracker** |
+| §10 Per-Page Performance | Mixed (scan scores + track citations) | Both directions |
+| §11 Content Performance | MORPHIQ-TRACKER.md (build-owned) | Not in state layer |
+| §12 Query Fanout Coverage | MORPHIQ-TRACKER.md (scan/track-owned) | Not in state layer |
+| §13 Content Creation Queue | MORPHIQ-TRACKER.md (track/build-owned) | Not in state layer |
+| §14 Run History | `morphiq-track/manifest.json` runs array | **State → Tracker** |
+
+**State → Tracker:** After each tracking run, the agent reads computed data from the JSON state layer and writes the corresponding markdown tables into MORPHIQ-TRACKER.md. The state layer is canonical; the tracker markdown is a projection.
+
+**Tracker-only sections:** Data owned by scan, rank, or build stays exclusively in the tracker. The agent reads these directly from markdown when needed.
+
+For the full state layer specification, see `state-layer.md`.
+
+---
+
 ## Staleness and Re-scan
 
 The tracker becomes stale when the user modifies the website outside of Morphiq skills. This is expected and handled:
 
 - **Scores** go stale → next morphiq-scan refreshes them
 - **Issues** go stale → next morphiq-scan detects resolved issues (removes them) and new issues (adds them), and flags regressions
-- **SoV/Citations** go stale → next morphiq-track measurement updates them
+- **SoV/Citations** go stale → next morphiq-track measurement updates them (from state layer)
 - **Content Performance** stays accurate — it only tracks what morphiq-build created
 
 The user does not need to worry about staleness. Running any skill updates the sections that skill owns. The tracker self-corrects over time.
@@ -642,11 +671,12 @@ The user does not need to worry about staleness. Running any skill updates the s
 
 ## Git as Audit Trail
 
-The tracker is a plain `.md` file committed to git. This means:
+The tracker is a plain `.md` file committed to git. The state layer files (`morphiq-track/*.json`) are also committed. This means:
 
-- `git log MORPHIQ-TRACKER.md` shows every update with timestamps
+- `git log MORPHIQ-TRACKER.md` shows every tracker update with timestamps
+- `git log morphiq-track/` shows every state layer change
 - `git diff` between commits shows exactly what changed per run
 - No database, no external service, no API — the full history is in version control
 - The user can revert to any previous state if needed
 
-Every skill run that modifies the tracker should be followed by a git commit (if the user has opted into auto-commits).
+Every skill run that modifies the tracker or state layer should be followed by a git commit (if the user has opted into auto-commits).

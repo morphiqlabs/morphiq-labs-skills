@@ -12,8 +12,9 @@ Step 4 of 4 — measurement + flywheel.
 - **Input:** Build Output (JSON) from morphiq-build + MORPHIQ-TRACKER.md (persistent state).
 - **Output:** Delta Report (JSON) → loops back to morphiq-rank.
 - **Owns:** MORPHIQ-TRACKER.md — generates on first run, updates every run.
+- **Owns:** `morphiq-track/` state directory — JSON state layer for prompts, results, citations.
 - **Drives:** 3 ongoing workflows (Content Optimization, Content Creation, Query Fanout Expansion).
-- **Data contract:** See `PIPELINE.md` §4 for the Delta Report and §5 for MORPHIQ-TRACKER.md.
+- **Data contract:** See `PIPELINE.md` §4 for the Delta Report, §5 for MORPHIQ-TRACKER.md, §6 for the JSON State Layer.
 
 ## Purpose
 
@@ -21,9 +22,19 @@ Morphiq Track is the measurement and flywheel skill. It queries AI providers to 
 
 ## Workflow
 
-### Step 1: Generate or Load Prompts
+### Step 0: Initialize or Load State
 
-**First run:** Generate 70 prompts across 6 GEO categories:
+Check if `morphiq-track/manifest.json` exists in the project root.
+
+- **Missing (first run):** Proceed to Step 1. The state directory will be created.
+- **Present (subsequent run):** Load `morphiq-track/prompts.json` directly — this contains the full prompt set with config, metadata, and tracking state. Skip to Step 2. If `recommendations.cooldown_days` has elapsed since `recommendations.last_generated`, generate 20 new recommendations via `create-prompts.py --state-dir morphiq-track/ --refresh`.
+- **Migration (tracker exists but no state dir):** Parse MORPHIQ-TRACKER.md §8 to bootstrap `prompts.json`, parse §7 to bootstrap `citations.json`. See `references/state-layer.md` Migration section.
+
+For state layer specification, read `references/state-layer.md`.
+
+### Step 1: Generate Prompts
+
+**First run only.** Generate 70 prompts across 6 GEO categories:
 
 | Category | Share | Brand Name? |
 |---|---|---|
@@ -36,13 +47,13 @@ Morphiq Track is the measurement and flywheel skill. It queries AI providers to 
 
 Apply quality rules per category. Add temporal markers to 70%+ prompts. Include entities in comparison/technical prompts.
 
-**Subsequent runs:** Load from MORPHIQ-TRACKER.md. Generate 20 recommendations if 7-day cooldown elapsed.
+Run `scripts/create-prompts.py --state-dir morphiq-track/ --brand {brand} --category {category} --competitors {competitors}`. This writes `morphiq-track/prompts.json` and initializes `morphiq-track/manifest.json`.
 
 For taxonomy, fanout profiles, and generation rules, read `references/prompt-taxonomy.md`.
 
 ### Step 2: Query AI Providers
 
-Distribute prompts evenly across 4 providers. Execute using `scripts/run-queries.py --mode execute`.
+Distribute prompts evenly across 4 providers. Execute using `scripts/run-queries.py --state-dir morphiq-track/ --mode execute`. This reads prompts from `morphiq-track/prompts.json`, writes versioned results to `morphiq-track/results/track-{date}.json`, and updates `morphiq-track/manifest.json`.
 
 | Provider | Model | Concurrency |
 |---|---|---|
@@ -101,15 +112,22 @@ For SoV methodology, read `references/share-of-voice.md`.
 
 ### Step 6: Compute Deltas
 
-Compare against previous snapshot. Flag changes >5 points. Generate flagged actions for regressions, losses, displacement, and conversion gaps.
+Compare against previous snapshot using `scripts/diff-results.py --state-dir morphiq-track/`. The script reads `manifest.json` to auto-resolve the current (`runs[0]`) and previous (`runs[1]`) results paths, and reads `morphiq-track/citations.json` for previous citation state. Flag changes >5 points. Generate flagged actions for regressions, losses, displacement, and conversion gaps.
 
 For delta methodology, read `references/delta-scoring.md`.
 
-### Step 7: Update MORPHIQ-TRACKER.md
+### Step 7: Update State Layer and MORPHIQ-TRACKER.md
 
-Update all 14 sections: Score Summary, Score Breakdown, Open/Resolved Issues, SoV (3-tier), SoV Trend, Citations, Prompts, Competitors, Per-Page, Content Performance, Fanout Coverage, Creation Queue, Run History.
+**State layer updates (JSON — source of truth for track-owned data):**
+1. Rebuild `morphiq-track/citations.json` from current results + previous citation state (gained/lost/stable)
+2. Update `morphiq-track/prompts.json` tracking fields (mentioned, cited, best_provider, runs_tracked, last_run)
+3. Update `morphiq-track/manifest.json` `updated_at`
+
+**Tracker updates (markdown — user-facing dashboard):**
+Project state layer data into MORPHIQ-TRACKER.md sections 5-9 and 14 (SoV, SoV Trend, Citations, Prompts, Competitors, Run History). Update remaining sections (1-4, 10-13) per tracker-spec.md rules.
 
 For tracker specification, read `references/tracker-spec.md`.
+For state layer specification, read `references/state-layer.md`.
 
 ### Step 8: Produce Delta Report
 
@@ -132,10 +150,13 @@ Assemble JSON (`PIPELINE.md` §4): SoV metrics, citations, per-provider data, co
 
 ### Workflow C: Query Fanout Expansion
 
-1. Analyze sub-queries from provider responses
-2. Identify sub-queries with no matching site content
-3. Generate briefs for unanswered sub-queries
-4. Prioritize by citation weight (citation-producing 1.5x, `site:` 2x)
+1. Run `scripts/analyze-fanout.py --state-dir morphiq-track/` with optional `--scan-report` for page inventory and simulated queries
+2. Script extracts sub-queries from latest track results, merges with scan simulated queries (fills Perplexity/Gemini gap)
+3. Compares against site page inventory to identify unanswered sub-queries
+4. Extracts competitor citation sources for each unanswered sub-query
+5. Generates content briefs prioritized by citation weight (`site:` 2x, citation-producing 1.5x, silent 0.5x)
+6. Output feeds Delta Report `content_creation_queue` via `--fanout` flag on generate-report.py
+7. Update MORPHIQ-TRACKER.md §12 (Query Fanout Coverage) and §13 (Content Creation Queue) with new entries
 
 ## Reference Files
 
@@ -147,3 +168,4 @@ Assemble JSON (`PIPELINE.md` §4): SoV metrics, citations, per-provider data, co
 | `references/query-targets.md` | Provider selection, distribution, citation categories, GEO score |
 | `references/delta-scoring.md` | Delta calculation, significance thresholds, flagged actions |
 | `references/tracker-spec.md` | Full MORPHIQ-TRACKER.md specification (14 sections) |
+| `references/state-layer.md` | JSON state layer: directory structure, file schemas, read/write rules, sync rules |

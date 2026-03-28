@@ -136,6 +136,31 @@ When running live web searches in Step 4, follow this strategy:
 - Target independent reviews, analyst reports, customer testimonials
 - Capture: differentiators + metrics + source attribution
 
+## Competitive Source Analysis (Fanout-Driven)
+
+When building content to answer sub-queries where competitors are already cited:
+
+1. **Competitor content is the baseline, not the target.** The quality floor is the minimum
+   to compete — exceed it on every dimension to earn the citation.
+
+2. **Every metric from the competitor analysis becomes a minimum threshold.** If the top
+   competitor has 4 statistics, include at least 5. If they have 1 expert quote, include 2.
+
+3. **Add at least one differentiator** the competitor lacks:
+   - More recent data (current year vs. older)
+   - Unique expert perspective not found in competitor content
+   - Brand-specific examples, case studies, or benchmarks
+   - Structured data (comparison tables, feature matrices) if competitor uses prose
+   - FAQ section addressing long-tail sub-queries competitor ignores
+
+4. **Exploit competitor citation format weaknesses.** Many competitors use trailing
+   parenthetical citations or footnotes that AI models miss. Using name-drop + link
+   format throughout gives the content a structural advantage for AI extraction.
+
+5. **Match or exceed structural depth.** If the competitor has 6 H2 sections, each
+   addressing a sub-query, generate at least 7 sections — ensuring every triggering
+   sub-query has its own section with a direct, retrievable answer.
+
 ## Integration Rules
 
 When integrating research findings into content:

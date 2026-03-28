@@ -1,6 +1,6 @@
 ---
 name: morphiq-build
-description: This skill should be used when the user asks to "fix the issues", "optimize existing content", "create new content for AI visibility", "run Morphiq Build", "generate schema markup", "create an llms.txt file", "run the content lab", or mentions building content fixes, generating schema, rewriting content for AI citations, or creating policy files. Consumes a Prioritized Roadmap (or user prompt, or existing content) and produces build artifacts through a 5-step content lab pipeline.
+description: This skill should be used when the user asks to "fix the issues", "optimize existing content", "create new content for AI visibility", "run Morphiq Build", "generate schema markup", "create an llms.txt file", "run the content lab", or mentions building content fixes, generating schema, rewriting content for AI citations, or creating policy files. Consumes a Prioritized Roadmap (or user prompt, or existing content) and produces build artifacts through a 6-step content lab pipeline.
 metadata:
   version: "0.1.0"
   author: morphiq-labs
@@ -15,7 +15,7 @@ Step 3 of 4 — consumes morphiq-rank output.
 
 ## Purpose
 
-Morphiq Build fixes issues from morphiq-rank. It creates new content, optimizes existing content, generates schema markup, builds policy files, and produces artifacts to improve AI visibility. The core engine is a 5-step content lab pipeline.
+Morphiq Build fixes issues from morphiq-rank. It creates new content, optimizes existing content, generates schema markup, builds policy files, and produces artifacts to improve AI visibility. The core engine is a 6-step content lab pipeline.
 
 ## Entry Points
 
@@ -25,7 +25,7 @@ Morphiq Build fixes issues from morphiq-rank. It creates new content, optimizes 
 
 **Path C — From Existing Content:** Accept content URL or raw text. Route to quality rewrite workflow.
 
-## Content Lab Pipeline (5 Steps)
+## Content Lab Pipeline (6 Steps)
 
 ### Step 1: Ingest Sources
 
@@ -69,6 +69,12 @@ Produce final content applying Morphiq standard:
 
 For full pipeline spec, read `references/content-lab-pipeline.md`.
 
+### Step 6: Validate Fanout Coverage (Fanout Issues Only)
+
+For `fanout-*` issues with `fanout_context`: validate generated content addresses all triggering sub-queries and meets the competitive quality floor. If coverage < 80% or quality floor not met, revise once. Skip for non-fanout content.
+
+Run `scripts/validate-coverage.py` with generated content + triggering sub-queries + quality floor.
+
 ## Post-Pipeline Processing
 
 | Process | What It Does | Reference |
@@ -88,9 +94,10 @@ For full pipeline spec, read `references/content-lab-pipeline.md`.
 | `agentic-*` schema | Schema Injection — generate JSON-LD |
 | `agentic-*` metadata | Metadata Optimization — generate tags |
 | `content-*` quality | Quality Rewrite — Step 5 pipeline |
-| `chunking-*` structure | Content Restructuring |
+| `chunking-buried-answer` | Quality Rewrite — Step 5 pipeline (Claude-driven rewrite to answer-first structure) |
+| `chunking-*` structure (other) | Content Restructuring |
 | `policy-*` files | Policy file generation |
-| `fanout-*` coverage | Full 5-step pipeline for new content |
+| `fanout-*` coverage | Full 6-step pipeline for new content. When `fanout_context` is present, pass `triggering_sub_queries` to Step 3 and `competitor_sources` to Step 4. Run Step 6 (coverage validation) before post-pipeline processing. |
 | `visibility-*` | Enrich existing content via pipeline |
 
 ## Build Output
@@ -101,7 +108,7 @@ Artifacts with `type`: "content", "schema", "metadata", "policy_file". Each incl
 
 | File | Purpose |
 |---|---|
-| `references/content-lab-pipeline.md` | Full 5-step pipeline with I/O formats |
+| `references/content-lab-pipeline.md` | Full 6-step pipeline with I/O formats |
 | `references/gap-taxonomy.md` | Gap types, severity, search query rules |
 | `references/enrichment-sources.md` | Citation format, source preferences |
 | `references/schema-templates.md` | JSON-LD templates, skip conditions |

@@ -115,15 +115,17 @@ The pipeline uses a 5-category model for the aggregate scan score. This is the o
 | Policy Files | 10 | 10% | `policy-files.md` |
 | **Total** | **100** | **100%** | |
 
-### How Technical Score Feeds Pipeline Categories
+### Relationship Between Technical Score and Pipeline Categories
 
-The per-page Technical Score dimensions map to pipeline categories:
+The per-page Technical Score and the pipeline AI Visibility Score are **independent scoring systems** that evaluate overlapping concerns from different angles:
 
-| Technical Dimension | Feeds Into | Pipeline Points |
+| Technical Score Dimension | Correlated Pipeline Category | Relationship |
 |---|---|---|
-| Schema (40pts) + Metadata (30pts) | Category 1: Agentic Readiness | 45 pts |
-| FAQ (20pts) + structural checks | Category 3: Chunking & Retrieval | 15 pts |
-| Content (10pts) + quality checks | Category 2: Content Quality | 20 pts |
+| Schema (40pts) + Metadata (30pts) | Category 1: Agentic Readiness (45 pts) | Both evaluate machine-readability. High Technical Schema → high Category 1. |
+| FAQ (20pts) | Category 3: Chunking & Retrieval (0.75 pts for FAQ) | Technical Score measures FAQ presence/count. Category 3 measures FAQ retrieval quality. A page can have 4 FAQs (full Technical points) but poorly phrased ones (low Category 3). |
+| Content (10pts) | Category 2: Content Quality (20 pts) | Technical Score checks word count and paragraph count. Category 2 evaluates E-E-A-T, citations, and depth — a much richer assessment. |
+
+Neither score derives from the other. They are computed independently per page and averaged across scanned pages. A high Technical Score generally correlates with high Pipeline Category scores, but the mapping is not formulaic.
 
 Categories 4 (Query Fanout) and 5 (Policy Files) are domain-level and do not derive from the per-page Technical Score.
 

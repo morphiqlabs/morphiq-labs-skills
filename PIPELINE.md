@@ -416,6 +416,44 @@ morphiq-rank consumes the scan report and produces a **prioritized roadmap** —
           "affected_urls": ["https://example.com/product"],
           "page_type": "product",
           "depends_on": ["agentic-missing-product-schema"]
+        },
+        {
+          "priority": 5,
+          "issue_id": "fanout-no-pricing-content",
+          "category": "query_fanout",
+          "severity": "high",
+          "impact_score": 80,
+          "effort": "high",
+          "summary": "No pricing content for pricing sub-queries",
+          "remediation": "Create dedicated pricing page addressing pricing sub-queries",
+          "affected_urls": [],
+          "page_type": "pricing",
+          "depends_on": [],
+          "fanout_context": {
+            "triggering_sub_queries": [
+              {
+                "query": "site:example.com pricing official 2026",
+                "model_origin": "openai",
+                "prompt_type": "category",
+                "citation_weight": "site_targeted",
+                "parent_prompt": "best widgets for teams 2026"
+              },
+              {
+                "query": "Example Company pricing vs Competitor pricing",
+                "model_origin": "anthropic",
+                "prompt_type": "comparison",
+                "citation_weight": "citation_producing",
+                "parent_prompt": "compare widget platforms pricing"
+              }
+            ],
+            "competitor_sources": [
+              {
+                "url": "https://competitor.com/pricing",
+                "citation_weight": 3,
+                "prompt_id": "prompt-012"
+              }
+            ]
+          }
         }
       ]
     },
@@ -456,6 +494,17 @@ morphiq-rank consumes the scan report and produces a **prioritized roadmap** —
 | `actions[].affected_urls` | string\[\] | yes | URLs where this issue appears |
 | `actions[].page_type` | string/null | no | Page type if page-specific |
 | `actions[].depends_on` | string\[\] | yes | Issue IDs that should be resolved first |
+| `actions[].fanout_context` | object/null | no | Context for `fanout-*` issues. Null or absent for non-fanout issues. |
+| `actions[].fanout_context.triggering_sub_queries[]` | array | yes (when fanout_context present) | Sub-queries that triggered this issue |
+| `actions[].fanout_context.triggering_sub_queries[].query` | string | yes | The sub-query text |
+| `actions[].fanout_context.triggering_sub_queries[].model_origin` | string | yes | Which AI model generated this sub-query (e.g. `openai`, `anthropic`, `simulated`) |
+| `actions[].fanout_context.triggering_sub_queries[].prompt_type` | string | yes | Parent prompt type (e.g. `category`, `comparison`, `technical_eval`) |
+| `actions[].fanout_context.triggering_sub_queries[].citation_weight` | enum | yes | `citation_producing`, `silent`, or `site_targeted` |
+| `actions[].fanout_context.triggering_sub_queries[].parent_prompt` | string | yes | The user-facing prompt that triggered the sub-query |
+| `actions[].fanout_context.competitor_sources[]` | array | no | Competitor URLs cited for related sub-queries |
+| `actions[].fanout_context.competitor_sources[].url` | string | yes | Competitor page URL |
+| `actions[].fanout_context.competitor_sources[].citation_weight` | integer | yes | How many times this URL was cited |
+| `actions[].fanout_context.competitor_sources[].prompt_id` | string | no | Prompt ID where citation appeared |
 
 ### Tier Definitions
 
@@ -479,13 +528,14 @@ morphiq-build has two entry points that converge to the same output format:
 - **From prompt** (Content Creation workflow): User describes what to create, or content creation briefs from the tracker are used → content lab pipeline generates it
 - **From existing content** (Content Optimization workflow): Existing content is ingested → analyzed for gaps → enriched → rewritten as final optimized output
 
-Both entry points run through the 5-step content lab pipeline (`content-lab-pipeline.md`):
+Both entry points run through the 6-step content lab pipeline (`content-lab-pipeline.md`):
 
 1. **Ingest Sources** — URL validation, deduplication, fetch content
 2. **Extract Content** — HTML to markdown conversion, structure preservation
-3. **Analyze Gaps** — Identify content, data, format, and depth gaps (`gap-taxonomy.md`)
-4. **Research to Fill Gaps** — Live web search for statistics, citations, expert quotes (`enrichment-sources.md`)
+3. **Analyze Gaps** — Identify content, data, format, depth, and fanout coverage gaps (`gap-taxonomy.md`). When `fanout_context` is present, use triggering sub-queries directly.
+4. **Research to Fill Gaps** — Live web search for statistics, citations, expert quotes (`enrichment-sources.md`). When `fanout_context.competitor_sources` present, analyze competitor pages to establish a quality floor.
 5. **Generate/Rewrite** — Apply content quality standards, metadata optimization, schema injection
+6. **Validate Fanout Coverage** — For `fanout-*` issues only: verify content addresses all triggering sub-queries and meets competitive quality floor. Revise once if below threshold.
 
 Post-pipeline: FAQs (`faq-guidelines.md`), metadata (`metadata-patterns.md`), JSON-LD schema (`schema-templates.md`), `llms.txt` generation (`llms-txt-spec.md`).
 
@@ -632,6 +682,12 @@ Schema artifact behavior depends on `entry_point`:
 | `artifacts[].placement.selector` | string/null | no | CSS selector if applicable |
 | `artifacts[].status` | enum/null | conditional | Schema artifact lifecycle. `"embedded"` (schema inside content artifact, `entry_point: "prompt"`), `"designed"` (separate, awaiting implementation), `"implemented"` (verified on page). Null for non-schema artifacts. |
 | `artifacts[].bound_to` | string/null | conditional | When `status` is `"embedded"`, references the `artifact_id` of the content artifact containing this schema. Null otherwise. |
+| `artifacts[].validation` | object/null | no | Fanout coverage validation results. Present for `fanout-*` content artifacts after Step 6 validation. Null or absent for non-fanout artifacts. |
+| `artifacts[].validation.total_sub_queries` | integer | yes (when present) | Total triggering sub-queries checked |
+| `artifacts[].validation.addressed` | integer | yes (when present) | Sub-queries addressed by the content |
+| `artifacts[].validation.coverage_pct` | float | yes (when present) | `(addressed / total) × 100` |
+| `artifacts[].validation.quality_floor_met` | boolean | yes (when present) | Whether content meets competitive quality floor |
+| `artifacts[].validation.revision_applied` | boolean | yes (when present) | Whether a revision pass was needed |
 | `summary` | object | yes | Rollup of what was built |
 
 ---
@@ -650,7 +706,7 @@ morphiq-track drives three distinct workflows:
 
 **What it does:**
 1. Reads `MORPHIQ-TRACKER.md` for current state — open issues, scores, previous deltas
-2. Takes existing content and runs it through the 5-step content lab pipeline (via morphiq-build, entry point: `existing_content`)
+2. Takes existing content and runs it through the 6-step content lab pipeline (via morphiq-build, entry point: `existing_content`)
 3. Does NOT re-process the original input sources — only enriches the content itself (adds citations, restructures for chunking, improves E-E-A-T signals, injects schema)
 4. Updates `MORPHIQ-TRACKER.md` with resolved issues, new scores
 
@@ -659,7 +715,7 @@ morphiq-track drives three distinct workflows:
 MORPHIQ-TRACKER.md (current state)
   → identify pages with open issues
   → morphiq-build (entry: existing_content)
-  → 5-step content lab pipeline (enrich only, not re-ingest)
+  → 6-step content lab pipeline (enrich only, not re-ingest)
   → artifacts produced
   → MORPHIQ-TRACKER.md updated (issues marked resolved)
 ```
@@ -673,7 +729,7 @@ MORPHIQ-TRACKER.md (current state)
 2. Runs `create-prompts.py` — generates prompts derived from existing content, tracked queries, and query fanout gaps
 3. Runs `run-queries.py` — executes prompts against LLM providers (OpenAI, Gemini, Perplexity, Anthropic) to gather input
 4. Stores results in `MORPHIQ-TRACKER.md` — prompt results, model outputs, competitor mentions, citation data
-5. Takes the gathered input (existing sources + prompt results) and runs it through the 5-step content lab pipeline (via morphiq-build, entry point: `prompt`)
+5. Takes the gathered input (existing sources + prompt results) and runs it through the 6-step content lab pipeline (via morphiq-build, entry point: `prompt`)
 6. Updates `MORPHIQ-TRACKER.md` with new content entries, updated SoV, new baselines
 
 **Flow:**
@@ -683,7 +739,7 @@ MORPHIQ-TRACKER.md (current state + existing blog posts)
   → run-queries.py (execute against LLM providers)
   → store results in MORPHIQ-TRACKER.md (prompts, competitors, deltas)
   → morphiq-build (entry: prompt, with gathered sources)
-  → 5-step content lab pipeline (full creation)
+  → 6-step content lab pipeline (full creation)
   → artifacts produced
   → MORPHIQ-TRACKER.md updated (new content tracked, SoV baselines set)
 ```
@@ -855,7 +911,11 @@ This report loops back to morphiq-rank as supplementary input for re-prioritizat
 | `content_creation_queue[].rationale` | string | yes | Why this sub-query matters |
 | `content_creation_queue[].status` | enum | yes | `pending`, `in_progress`, `completed` |
 | `content_creation_queue[].created_at` | string | yes | ISO date when brief was created |
-| `raw_results` | object | yes | Pointer to raw provider response data |
+| `content_creation_queue[].model_origin` | string | no | Which AI model generated the sub-query (e.g. `openai`, `anthropic`, `simulated`) |
+| `content_creation_queue[].prompt_type` | string | no | Parent prompt type (e.g. `category`, `comparison`) |
+| `content_creation_queue[].citation_weight` | enum | no | `citation_producing`, `silent`, or `site_targeted` |
+| `content_creation_queue[].competitor_sources[]` | array | no | Competitor URLs cited for this sub-query, with `url` and `citation_weight` |
+| `raw_results` | object | yes | Pointer to raw provider response data in the state layer (see §6) |
 
 ### Baseline Run Behavior
 
@@ -964,7 +1024,7 @@ FIX ISSUES
                               ┌───────────────────────────────────┐
                               │          morphiq-build            │
                               │                                   │
-                              │  5-step content lab pipeline      │
+                              │  6-step content lab pipeline      │
                               │  → artifacts (content, schema,    │
                               │    policy files, metadata)        │
                               └──────────────┬────────────────────┘
@@ -987,7 +1047,7 @@ ONGOING: CONTENT OPTIMIZATION (Workflow A)
   morphiq-build (entry: existing_content)
         │
         ▼
-  5-step pipeline (enrich only)
+  6-step pipeline (enrich only)
         │
         ▼
   MORPHIQ-TRACKER.md updated (issues resolved)
@@ -1013,7 +1073,7 @@ ONGOING: CONTENT CREATION (Workflow B)
   morphiq-build (entry: prompt, with gathered sources)
         │
         ▼
-  5-step content lab pipeline (full creation)
+  6-step content lab pipeline (full creation)
         │
         ▼
   MORPHIQ-TRACKER.md updated (new content tracked, SoV baselines)
@@ -1078,6 +1138,55 @@ RE-AUDIT (after user edits outside the skill)
         ▼
   Cycle continues
 ```
+
+## 6. JSON State Layer
+
+### Purpose
+
+The JSON state layer is the machine-readable complement to `MORPHIQ-TRACKER.md`. It solves three persistence gaps:
+
+1. **Prompt metadata** — `create-prompts.py` generates full prompt metadata (`geo_category`, `pipeline_type`, `config` block) that `run-queries.py` needs, but the tracker only stores a summary table. The state layer persists the complete prompt state in `prompts.json`.
+2. **Versioned results** — `run-queries.py` needs to produce versioned output so `diff-results.py` can compare current vs. previous runs. The state layer stores each run in `results/track-{date}.json`.
+3. **Structured citations** — `diff-results.py` and morphiq-build need structured citation data (URL, provider, citation_weight, authority_tier). The state layer accumulates this in `citations.json`.
+
+### Directory Structure
+
+```
+{project-root}/
+  MORPHIQ-TRACKER.md              # Unchanged — human-readable dashboard
+  morphiq-track/
+    manifest.json                  # Run index + file pointers
+    prompts.json                   # Full prompt state (persisted across runs)
+    citations.json                 # Structured citation state
+    results/
+      track-{YYYY-MM-DD}.json     # Per-run raw results (versioned)
+```
+
+### Files
+
+| File | Purpose | Written By | Read By |
+|------|---------|------------|---------|
+| `manifest.json` | Run index, entry point for all scripts | `create-prompts.py` (init), `run-queries.py` (prepend run), agent (update) | All scripts, agent |
+| `prompts.json` | Full prompt metadata + tracking state | `create-prompts.py` (generate), agent (update tracking) | `run-queries.py`, agent, morphiq-build (Workflow B) |
+| `citations.json` | Structured citation state across runs | Agent (rebuild after each run) | `diff-results.py`, morphiq-build (Workflow B) |
+| `results/track-{date}.json` | Per-run raw results (full response text, citations, sub-queries) | `run-queries.py` | `diff-results.py`, agent, morphiq-build (Workflow B) |
+
+### Source of Truth
+
+| Data | Source of Truth | Sync Direction |
+|------|----------------|----------------|
+| Scores, Issues (scan/rank/build-owned) | MORPHIQ-TRACKER.md | Not in state layer |
+| SoV, Citations, Prompts, Competitors (track-owned) | State layer JSON | State → Tracker |
+| Run History | `manifest.json` | State → Tracker |
+| Content Performance, Fanout Queue (build-owned) | MORPHIQ-TRACKER.md | Not in state layer |
+
+After each tracking run, the agent projects state layer data into MORPHIQ-TRACKER.md sections 5-9 and 14. The tracker stays the user-facing dashboard; the state layer is the data backbone.
+
+### Full Specification
+
+> `morphiq-track/references/state-layer.md`
+
+---
 
 ## Versioning
 

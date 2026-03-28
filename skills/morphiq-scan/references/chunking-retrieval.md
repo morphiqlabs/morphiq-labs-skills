@@ -194,6 +194,8 @@ Write for both:
 
 ## 6. Query Fan-Out & Reasoning Retrieval Support
 
+> **Scope:** This section evaluates per-page structural support for multi-step retrieval — whether a single page decomposes its topic into retrievable sub-sections. This is distinct from Category 4 (Query Fanout, `query-fanout.md`), which evaluates domain-level coverage — whether any page on the site answers a given sub-query. A page can score well here (good decomposition) while the site scores poorly on Category 4 (missing pages for key sub-queries), and vice versa.
+
 ### What to check
 
 - Complex topics are decomposed into clear subtopics
@@ -301,30 +303,9 @@ Early content often receives disproportionate attention in retrieval and citatio
 
 ---
 
-## 10. Structured Data, Semantic HTML, and Retrieval Resilience
+## 10. Structured Data & Semantic HTML
 
-### What to check
-
-- Headings use real semantic heading tags
-- Lists, tables, nav, main content, and FAQs are marked up semantically
-- Structured data supports entity understanding where relevant
-- Important content is visible in the HTML, not only client-side afterthoughts
-- The page remains understandable after simplification
-
-### Why this matters
-
-Retrieval systems and answer engines often preprocess and simplify content before chunking or scoring it. The exact preprocessing varies by system, so do not assume one fixed pipeline. But the general implication is clear: pages with strong semantic HTML and machine-readable structure are more likely to survive parsing cleanly. Passage retrieval and RAG both benefit from structure that preserves meaning when content is reduced to chunks. ([Google for Developers](https://developers.google.com/search/docs/appearance/ranking-systems-guide))
-
-### Important caveat
-
-Do **not** claim that "JSON-LD alone solves retrieval." Structured data helps, but retrieval still depends heavily on visible content structure, local context, section clarity, and reranking survival.
-
-### Fail signals
-
-- Div soup with weak semantics
-- Important content hidden in accordions or script-heavy rendering paths
-- Visible text and structured data contradict each other
-- Schema exists but the actual page is still hard to chunk and interpret
+Structured data and semantic HTML are evaluated under Category 1 (Agentic Readiness) — see `agentic-readiness.md`. They are not scored again here. The only chunking-specific implication: pages with strong semantic HTML are more likely to survive preprocessing and produce coherent chunks. Do not claim that JSON-LD alone solves retrieval.
 
 ---
 

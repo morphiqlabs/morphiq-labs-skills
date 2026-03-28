@@ -2,28 +2,28 @@
 """run-queries.py — Distribute, execute, and aggregate AI provider queries.
 
 Usage:
-  Plan mode:     python3 run-queries.py --prompts prompts.json --mode plan
-  Execute mode:  python3 run-queries.py --prompts prompts.json --mode execute
-  Results mode:  python3 run-queries.py --prompts prompts.json --results results.json --mode results
+  State-dir mode (recommended):
+    Plan:     python3 run-queries.py --state-dir morphiq-track/ --mode plan
+    Execute:  python3 run-queries.py --state-dir morphiq-track/ --mode execute
+    Results:  python3 run-queries.py --state-dir morphiq-track/ --mode results
+
+  Legacy mode (no state):
+    Plan:     python3 run-queries.py --prompts prompts.json --mode plan
+    Execute:  python3 run-queries.py --prompts prompts.json --mode execute
+    Results:  python3 run-queries.py --prompts prompts.json --results results.json --mode results
 
 Modes:
   plan    — Output an execution plan (provider assignments, batching).
-  execute — Run all queries against live provider APIs and save results.
+  execute — Run all queries against live provider APIs and save versioned results.
   results — Aggregate previously-saved results and compute citation diffs.
 
 Required env vars for execute mode:
   OPENAI_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, ANTHROPIC_API_KEY
 
-Input file schema (--prompts):
-{
-  "config": {
-    "brand": "...",
-    "domain": "...",
-    "competitors": ["..."],       // optional
-    "output_path": "..."          // optional, default: morphiq-track-results.json
-  },
-  "prompts": [...]
-}
+With --state-dir:
+  Reads prompts from {state-dir}/prompts.json
+  Writes versioned results to {state-dir}/results/track-{date}.json
+  Updates {state-dir}/manifest.json with new run entry
 """
 
 import argparse
@@ -32,6 +32,7 @@ import os
 import sys
 import time
 from collections import defaultdict
+from datetime import datetime
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from urllib.request import urlopen, Request
 
@@ -509,14 +510,7 @@ def execute_queries(prompts, config):
         elif provider == "perplexity":
             time.sleep(0.5)
 
-    with open(output_path, "w") as f:
-        json.dump({
-            "config": {"brand": brand, "domain": domain, "competitors": competitors},
-            "results": results,
-            "total": len(results),
-        }, f, indent=2)
-
-    # Summary
+    # Build summary
     mentioned = sum(1 for r in results if r["analysis"]["brand_mentioned"])
     cited_count = sum(1 for r in results if r["analysis"]["domain_cited"])
     errors = sum(1 for r in results if r.get("error"))
@@ -531,7 +525,28 @@ def execute_queries(prompts, config):
             by_provider[p]["mentioned"] += 1
         by_provider[p]["sub_queries"] += len(r.get("sub_queries", []))
 
+    run_id = config.get("_run_id", f"track-{datetime.utcnow().strftime('%Y-%m-%d')}")
+
+    output_data = {
+        "schema_version": "1.0",
+        "run_id": run_id,
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "config": {"brand": brand, "domain": domain, "competitors": competitors},
+        "results": results,
+        "total": len(results),
+        "summary": {
+            "mentioned": mentioned,
+            "cited": cited_count,
+            "errors": errors,
+            "by_provider": by_provider,
+        },
+    }
+
+    with open(output_path, "w") as f:
+        json.dump(output_data, f, indent=2)
+
     print(f"\n=== SUMMARY ({brand}) ===", file=sys.stderr)
+    print(f"Run ID: {run_id}", file=sys.stderr)
     print(f"Total queries: {len(results)}", file=sys.stderr)
     print(f"Brand mentioned: {mentioned}/{len(results)} ({mentioned/len(results)*100:.1f}%)", file=sys.stderr)
     print(f"Domain cited: {cited_count}/{len(results)} ({cited_count/len(results)*100:.1f}%)", file=sys.stderr)
@@ -541,14 +556,60 @@ def execute_queries(prompts, config):
               f"{stats['mentioned']} mentions, {stats['sub_queries']} sub-queries", file=sys.stderr)
     print(f"Results saved to {output_path}", file=sys.stderr)
 
-    return results
+    return results, output_data
+
+
+# ── State-dir helpers ───────────────────────────────────────────────────────
+
+def resolve_results_path(state_dir):
+    """Compute a versioned results path, disambiguating same-day runs."""
+    results_dir = os.path.join(state_dir, "results")
+    os.makedirs(results_dir, exist_ok=True)
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    base_path = os.path.join(results_dir, f"track-{today}.json")
+    if not os.path.exists(base_path):
+        return base_path, f"track-{today}"
+    # Same-day disambiguation
+    counter = 1
+    while True:
+        path = os.path.join(results_dir, f"track-{today}-{counter:03d}.json")
+        if not os.path.exists(path):
+            return path, f"track-{today}-{counter:03d}"
+        counter += 1
+
+
+def update_manifest(state_dir, run_id, results_path, prompt_count, providers):
+    """Prepend a run entry to manifest.json."""
+    manifest_path = os.path.join(state_dir, "manifest.json")
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+
+    is_baseline = len(manifest.get("runs", [])) == 0
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    run_entry = {
+        "run_id": run_id,
+        "type": "track",
+        "date": today,
+        "is_baseline": is_baseline,
+        "results_path": results_path,
+        "prompt_count": prompt_count,
+        "providers_queried": providers,
+    }
+    manifest["runs"].insert(0, run_entry)
+    manifest["updated_at"] = datetime.utcnow().isoformat() + "Z"
+
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    return manifest
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Distribute, execute, and aggregate AI provider queries")
-    parser.add_argument("--prompts", required=True, help="Path to prompts JSON file with config block")
+    parser.add_argument("--prompts", default=None, help="Path to prompts JSON file with config block")
     parser.add_argument("--output", default="-", help="Output path for plan/results mode (- for stdout)")
     parser.add_argument("--providers", default="", help="Comma-separated provider names (default: all)")
     parser.add_argument("--mode", default="plan", choices=["plan", "execute", "results"],
@@ -556,10 +617,24 @@ def main():
     parser.add_argument("--results", default=None, help="Path to results JSON (for --mode results)")
     parser.add_argument("--previous-citations", default=None,
                         help="Path to previous citations JSON (for citation diffing)")
+    parser.add_argument("--state-dir", default=None,
+                        help="State directory (e.g., morphiq-track/). Reads prompts, writes versioned results, updates manifest.")
     args = parser.parse_args()
 
-    with open(args.prompts) as f:
-        data = json.load(f)
+    # ── Resolve prompts source ──────────────────────────────────────────
+    if args.state_dir:
+        prompts_path = os.path.join(args.state_dir, "prompts.json")
+        if not os.path.exists(prompts_path):
+            print(f"ERROR: {prompts_path} not found. Run create-prompts.py --state-dir first.", file=sys.stderr)
+            sys.exit(1)
+        with open(prompts_path) as f:
+            data = json.load(f)
+    elif args.prompts:
+        with open(args.prompts) as f:
+            data = json.load(f)
+    else:
+        print("ERROR: provide --state-dir or --prompts", file=sys.stderr)
+        sys.exit(1)
 
     prompts = data.get("prompts", data) if isinstance(data, dict) else data
     config = data.get("config", {}) if isinstance(data, dict) else {}
@@ -573,12 +648,46 @@ def main():
         if not config.get("brand") or not config.get("domain"):
             print("ERROR: prompts file must have config.brand and config.domain", file=sys.stderr)
             sys.exit(1)
-        execute_queries(prompts, config)
+
+        # Resolve output path
+        if args.state_dir:
+            output_path, run_id = resolve_results_path(args.state_dir)
+            config["output_path"] = output_path
+            config["_run_id"] = run_id
+        else:
+            config.setdefault("output_path", "morphiq-track-results.json")
+
+        _, output_data = execute_queries(prompts, config)
+
+        # Update manifest if using state-dir
+        if args.state_dir:
+            providers_used = list(set(r["provider"] for r in output_data.get("results", [])))
+            update_manifest(
+                args.state_dir,
+                run_id=output_data["run_id"],
+                results_path=output_path,
+                prompt_count=len(prompts),
+                providers=providers_used,
+            )
+            print(f"Manifest updated: {os.path.join(args.state_dir, 'manifest.json')}", file=sys.stderr)
         return
 
     else:
+        # Results mode: resolve from state-dir or explicit paths
         results_data = []
-        if args.results:
+        if args.state_dir:
+            manifest_path = os.path.join(args.state_dir, "manifest.json")
+            if os.path.exists(manifest_path):
+                with open(manifest_path) as f:
+                    manifest = json.load(f)
+                runs = manifest.get("runs", [])
+                if runs:
+                    latest_path = runs[0].get("results_path")
+                    if latest_path and os.path.exists(latest_path):
+                        with open(latest_path) as f:
+                            results_file = json.load(f)
+                        results_data = results_file.get("results", [])
+        elif args.results:
             with open(args.results) as f:
                 results_data = json.load(f)
             if isinstance(results_data, dict):
@@ -594,11 +703,17 @@ def main():
                 current_citations.append(c)
 
         citation_diff = None
-        if args.previous_citations:
-            with open(args.previous_citations) as f:
+        prev_citations_path = args.previous_citations
+        if not prev_citations_path and args.state_dir:
+            citations_path = os.path.join(args.state_dir, "citations.json")
+            if os.path.exists(citations_path):
+                prev_citations_path = citations_path
+
+        if prev_citations_path:
+            with open(prev_citations_path) as f:
                 previous_citations = json.load(f)
             if isinstance(previous_citations, dict):
-                previous_citations = previous_citations.get("citations", [])
+                previous_citations = previous_citations.get("active_citations", previous_citations.get("citations", []))
             citation_diff = diff_citations(current_citations, previous_citations)
 
         output = json.dumps({"summary": summary, "current_citations": current_citations,

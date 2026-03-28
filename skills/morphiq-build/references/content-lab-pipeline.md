@@ -1,4 +1,4 @@
-# Content Lab Pipeline — 5-Step Workflow
+# Content Lab Pipeline — 6-Step Workflow
 
 This is the core content creation and optimization pipeline for morphiq-build. It takes tracked prompts and captured sources (from morphiq-track) or a user prompt, and produces final optimized content that AI systems will cite.
 
@@ -197,6 +197,24 @@ In addition to the standard gap types, Step 3 evaluates whether the content bein
 
 For the full gap taxonomy, read `references/gap-taxonomy.md`.
 
+### Fanout Context Integration
+
+When the input action has `fanout_context`, use the `triggering_sub_queries` directly instead of simulating fan-out:
+
+1. **Each triggering sub-query becomes a required content section.** The generated content must include a heading (H2 or H3) that addresses each sub-query's topic. The section must contain a substantive answer (50+ words, key terms present).
+
+2. **Citation weight determines priority:**
+   - `site_targeted`: Must have a dedicated section with exact terminology the model searches for. Highest priority — these are explicit, observable gaps.
+   - `citation_producing`: Should have a dedicated section. These sub-queries produce visible citations when answered.
+   - `silent`: Nice to have. Include coverage in adjacent sections or FAQ entries.
+
+3. **Model origin determines structural needs:**
+   - OpenAI (`site:`) sub-queries: Page URL and title must clearly match the searched topic. Include the exact terminology GPT-5.4 appends ("pricing", "features", "official", year markers).
+   - Gemini "alternatives" sub-queries: Require balanced comparison content with the competitor named explicitly.
+   - Anthropic bundled sub-queries: Ensure the content section is self-contained and retrieval-friendly (clean heading + direct answer).
+
+4. **Generate research queries targeting each triggering sub-query.** Prioritize `site_targeted` and `citation_producing` sub-queries for dedicated research queries. Combine `silent` sub-queries into broader research queries.
+
 ## Step 4 — Research to Fill Gaps
 
 **Script:** `scripts/research-live.py`
@@ -245,6 +263,51 @@ For the full gap taxonomy, read `references/gap-taxonomy.md`.
   "stats_found": 5,
   "quotes_found": 2,
   "sources_found": 8
+}
+```
+
+### Competitive Source Analysis (Fanout-Driven)
+
+When the input action has `fanout_context.competitor_sources`:
+
+1. **Fetch competitor sources** — For each competitor source URL (cap at 3), extract the page content using the same extraction approach as Step 2. These are the pages that AI models currently cite instead of the audited site.
+
+2. **Analyze competitor depth** — For each fetched competitor page, count:
+   - Statistics with source attribution (name-drop + link format)
+   - Expert quotes with in-text attribution
+   - H2/H3 sections (structural depth)
+   - Total word count
+   - FAQ entries
+   - Comparison tables or structured data
+
+3. **Establish quality floor** — The generated content must meet or exceed these minimums:
+   - `max(highest_competitor_stats_count, 3)` statistics with attribution
+   - `max(highest_competitor_quotes_count, 1)` expert quotes
+   - `max(highest_competitor_section_count, 5)` H2 sections
+   - Content depth that addresses all the sub-queries the competitor was cited for
+
+4. **Dedicate 1-2 research queries to outperforming competitor content** — Find more recent data, better expert quotes, or additional perspectives that the competitor lacks. Focus on competitor weaknesses (missing temporal markers, unsourced claims, no expert quotes).
+
+**Quality floor output** (passed to Step 5 and Step 6):
+
+```json
+{
+  "quality_floor": {
+    "min_statistics": 5,
+    "min_expert_quotes": 2,
+    "min_sections": 7,
+    "competitor_analysis": [
+      {
+        "url": "https://competitor.com/pricing",
+        "stats_count": 4,
+        "quotes_count": 1,
+        "sections": 6,
+        "word_count": 1200,
+        "strengths": ["detailed per-plan breakdown", "comparison table"],
+        "weaknesses": ["no temporal markers", "no expert quotes", "trailing parenthetical citations"]
+      }
+    ]
+  }
 }
 ```
 
@@ -314,9 +377,80 @@ For citation format rules and source authority preferences, read `references/enr
 }
 ```
 
+## Step 6 — Validate Fanout Coverage
+
+**Script:** `scripts/validate-coverage.py`
+
+**When it runs:** Only for content built from `fanout-*` issues or when `fanout_context` is present. Skip this step entirely for non-fanout content.
+
+**What it does:**
+
+Takes the generated content from Step 5 and the `fanout_context.triggering_sub_queries` list, then checks whether the content contains a section that answers each sub-query.
+
+**Matching criteria per sub-query:**
+
+1. A heading (H2 or H3) contains key terms from the sub-query
+2. The section under that heading has a substantive answer (50+ words containing key terms from the sub-query — not just a passing mention)
+3. For `site_targeted` sub-queries: the content page type matches the query intent (pricing queries answered on pricing page, features on product page)
+
+**Quality floor validation:**
+
+If a quality floor was established in Step 4 (from competitive source analysis), also validate:
+- Statistics count meets `min_statistics`
+- Expert quotes count meets `min_expert_quotes`
+- Section count meets `min_sections`
+
+**Input:** generated content (markdown) + triggering_sub_queries + quality_floor (from Step 4)
+
+**Output:**
+
+```json
+{
+  "validation": {
+    "total_sub_queries": 7,
+    "addressed": 7,
+    "missing": 0,
+    "coverage_pct": 100,
+    "details": [
+      {
+        "sub_query": "SaaS pricing comparison 2026",
+        "citation_weight": "site_targeted",
+        "status": "addressed",
+        "matched_section": "## SaaS Pricing Comparison",
+        "has_direct_answer": true
+      },
+      {
+        "sub_query": "SaaS implementation timeline",
+        "citation_weight": "silent",
+        "status": "missing",
+        "matched_section": null,
+        "suggestion": "Add a section covering implementation timelines with specific durations"
+      }
+    ],
+    "quality_floor_met": true,
+    "quality_floor_details": {
+      "statistics": {"required": 5, "found": 6, "met": true},
+      "expert_quotes": {"required": 2, "found": 2, "met": true},
+      "sections": {"required": 7, "found": 8, "met": true}
+    },
+    "action": "pass"
+  }
+}
+```
+
+**Decision logic:**
+
+| Condition | Action | Next Step |
+| --- | --- | --- |
+| `coverage_pct >= 100%` AND `quality_floor_met = true` | `pass` | Proceed to post-pipeline processing |
+| `coverage_pct >= 80%` AND `quality_floor_met = true` | `pass_with_warnings` | Proceed but log missing sub-queries |
+| `coverage_pct < 80%` OR `quality_floor_met = false` | `revise` | Return to Step 5 with revision instructions |
+
+**Revision behavior:** When action is `revise`, pass the missing sub-queries and unmet quality floor items back to Step 5 as explicit additive requirements ("add a section for X", "add 2 more statistics"). Maximum 1 revision pass to prevent infinite loops. After revision, re-run Step 6. If still below threshold after revision, proceed with `pass_with_warnings` and log the gap.
+
 ## Post-Pipeline Processing
 
-After the 5-step pipeline completes, morphiq-build runs additional processing:
+After the 6-step pipeline completes, morphiq-build runs additional processing:
 
 **Schema Injection** (`scripts/inject-schema.py`):
 

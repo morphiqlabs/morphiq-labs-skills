@@ -82,7 +82,7 @@ Issues with content structure that impair LLM retrieval, grounding, and citation
 | `chunking-weak-local-context` | medium | medium | Paragraphs rely on context from elsewhere on the page | Add explicit subjects, entities, and timeframes locally |
 | `chunking-buried-answer` | high | medium | Answer buried after multiple preamble paragraphs | Move direct answer to first paragraph under the heading |
 | `chunking-missing-query-terms` | medium | medium | Page lacks literal terminology users would search | Add exact-match terms, product names, and category language |
-| `chunking-long-paragraphs` | medium | medium | Paragraphs exceed retrieval-friendly length (>100 words) | Split into focused paragraphs of 50–75 words |
+| `chunking-long-paragraphs` | medium | medium | Paragraphs exceed retrieval-friendly length — multiple ideas in one block or wall-of-text paragraphs that resist clean chunking | Split into focused paragraphs, each expressing one main idea with explicit local context |
 | `chunking-poor-paragraph-structure` | medium | medium | Paragraphs mix multiple ideas without clear boundaries | Restructure so each paragraph expresses one main idea |
 | `chunking-prose-instead-of-list` | low | low | Sequential steps described in paragraph form | Convert to numbered list |
 | `chunking-unparseable-table` | medium | medium | Comparison data in prose or image-based tables | Convert to parseable HTML tables with clear headers |
@@ -190,6 +190,17 @@ hash = SHA256(brandId + category + title)
 ```
 
 Brand-level issues are not per-page — one issue per brand per type.
+
+### Cross-Category Deduplication
+
+Some issues across categories describe the same underlying failure from different perspectives. To prevent duplicate backlog entries:
+
+| If this issue exists... | ...suppress this issue on the same URL |
+|---|---|
+| `agentic-broken-heading-hierarchy` (Tier 2) | `chunking-broken-heading-hierarchy` (Tier 4) |
+| `content-no-tldr` (Tier 3) | `chunking-no-top-summary` (Tier 4) |
+
+The lower-tier issue takes precedence because it surfaces first in the progressive reveal and gets fixed first. Resolving the lower-tier issue resolves the higher-tier issue by definition. If the lower-tier issue is completed and the problem persists (edge case), the higher-tier issue can then be created.
 
 ---
 

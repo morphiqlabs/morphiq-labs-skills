@@ -39,6 +39,15 @@ For each finding, create a formal issue:
 
 For fanout issues, severity depends on parent prompt type fan-out depth. `site:` and citation-producing sub-queries escalate one level.
 
+For `fanout-*` issues, populate `fanout_context` from the scan report's `query_fanout.simulated_queries[]` and `query_fanout.suggested_content[]`. Each simulated query mapping to this issue becomes a `triggering_sub_queries` entry:
+- `query` ← from `simulated_queries[].query`
+- `model_origin` ← from `simulated_queries[].model` (rename `model` → `model_origin`)
+- `prompt_type` ← from `simulated_queries[].prompt_type`
+- `citation_weight` ← from `simulated_queries[].citation_weight`
+- `parent_prompt` ← for simulated queries, set to `"(simulated)"`; for `suggested_content[]` entries, use the `suggestion` field
+
+If the Delta Report's `content_creation_queue` has entries matching this issue, include their `competitor_sources` in `fanout_context.competitor_sources[]`.
+
 **Deduplication:** Technical issues hash by `brandId + checkCode + pageUrl`. AI visibility issues hash by `brandId + category + title`.
 
 For all issue types and severity logic, read `references/issue-catalog.md`.
