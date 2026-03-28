@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
-"""generate-llms-txt.py — Generate an optimised llms.txt for any domain.
+"""generate-llms-txt.py — Context collection, validation, and template generation for llms.txt.
 
-Pipeline (7 steps):
-  1. URL Discovery    — robots.txt, sitemap, homepage anchor crawl
-  2. Page Scoring     — rank pages by type/signal relevance
-  3. Deep Scrape      — fetch top-N pages, extract visible text
-  4. LLM Synthesis    — summarise scraped content into llms.txt sections
-  5. Assembly         — stitch sections into spec-compliant llms.txt
-  6. Validation       — size budget, link-check, schema conformance
-  7. Output           — write to stdout or file
+This script provides three modes for the agent-driven llms.txt pipeline:
 
-This module currently implements Step 1 (URL Discovery).
+  collect  — Fetch homepage, robots.txt, sitemap, docs; scrape pages; build
+             evidence; construct system+user prompts; generate template fallback.
+             Outputs JSON with everything the coding agent needs.
+  validate — Read llms.txt content from stdin; check required sections, FAQ
+             format, URL scope, size budget, sitemap count. Outputs JSON.
+  template — Generate a deterministic llms.txt from collected context (no LLM).
 
-Usage: python3 generate-llms-txt.py <domain>
+The coding agent (Claude Code) is the LLM — it uses the prompts from
+`collect` to generate the llms.txt, then validates with `validate`.
+
+Usage:
+  python3 generate-llms-txt.py collect  <root_url> [--brand NAME] [--tagline TEXT]
+  python3 generate-llms-txt.py validate <root_url> [--docs-base URL] < llms.txt
+  python3 generate-llms-txt.py template <root_url> [--brand NAME] [--tagline TEXT]
 """
 
 import argparse
 import json
-import os
 import re
 import sys
 import urllib.error
@@ -40,7 +43,6 @@ DEEP_CHAR_LIMIT = 3000
 SHALLOW_CHAR_LIMIT = 900
 SIZE_BUDGET_KB = 100
 MAX_SITEMAP_URLS = 80
-LLM_MAX_TOKENS = 4096
 
 DOCS_PATH_PATTERNS = [
     "/docs",
@@ -638,103 +640,6 @@ def build_user_prompt(context, brand_info):
     return "\n".join(parts)
 
 
-# ── LLM Call with Multi-Provider Fallback ────────────────────────────────────
-
-
-def _call_anthropic(system_prompt, user_prompt, max_tokens):
-    # type: (str, str, int) -> str
-    """Call Anthropic Claude API. Tries claude-sonnet-4-5-20250514 then claude-sonnet-4-20250514."""
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
-    models = ["claude-sonnet-4-5-20250514", "claude-sonnet-4-20250514"]
-    last_err = None
-
-    for model in models:
-        try:
-            print(f"[llms-txt] Calling Anthropic model={model}", file=sys.stderr)
-            response = client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
-            )
-            text = "".join(
-                block.text for block in response.content if hasattr(block, "text")
-            )
-            print(f"[llms-txt] Anthropic OK ({len(text)} chars)", file=sys.stderr)
-            return text
-        except Exception as exc:
-            last_err = exc
-            print(f"[llms-txt] Anthropic {model} failed: {exc}", file=sys.stderr)
-
-    raise last_err
-
-
-def _call_openai(system_prompt, user_prompt, max_tokens):
-    # type: (str, str, int) -> str
-    """Call OpenAI GPT-4o API."""
-    from openai import OpenAI
-
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
-    model = "gpt-4o"
-
-    print(f"[llms-txt] Calling OpenAI model={model}", file=sys.stderr)
-    response = client.chat.completions.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    )
-    text = response.choices[0].message.content
-    print(f"[llms-txt] OpenAI OK ({len(text)} chars)", file=sys.stderr)
-    return text
-
-
-def _call_gemini(system_prompt, user_prompt, max_tokens):
-    # type: (str, str, int) -> str
-    """Call Google Gemini API."""
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
-    model = "gemini-2.5-flash"
-    content = system_prompt + "\n\n" + user_prompt
-
-    print(f"[llms-txt] Calling Gemini model={model}", file=sys.stderr)
-    response = client.models.generate_content(
-        model=model,
-        contents=content,
-        config=types.GenerateContentConfig(max_output_tokens=max_tokens),
-    )
-    text = response.text
-    print(f"[llms-txt] Gemini OK ({len(text)} chars)", file=sys.stderr)
-    return text
-
-
-def call_llm(system_prompt, user_prompt, max_tokens=LLM_MAX_TOKENS):
-    # type: (str, str, int) -> Optional[str]
-    """Call LLM with Anthropic -> OpenAI -> Gemini fallback chain.
-
-    Returns raw text on first success, or None if all providers fail.
-    """
-    providers = [
-        ("anthropic", _call_anthropic),
-        ("openai", _call_openai),
-        ("gemini", _call_gemini),
-    ]
-
-    for name, fn in providers:
-        try:
-            return fn(system_prompt, user_prompt, max_tokens)
-        except Exception as exc:
-            print(f"[llms-txt] Provider {name} failed: {exc}", file=sys.stderr)
-
-    return None
-
-
 # ── Output Validation ──────────────────────────────────────────────────────
 
 REQUIRED_SECTIONS = {
@@ -845,28 +750,6 @@ def validate_llms_txt(content, root_url, docs_base):
 
 
 # ── Repair Pass & Template Fallback ──────────────────────────────────────
-
-
-def repair_llms_txt(original_content, errors, system_prompt, user_prompt):
-    # type: (str, List[str], str, str) -> Optional[str]
-    """One-shot LLM repair: feed original content + validation errors back.
-
-    Returns the extracted repaired content string, or None if repair fails.
-    """
-    error_block = "\n".join(f"- {e}" for e in errors)
-    repair_prompt = (
-        f"{user_prompt}\n\n"
-        f"## Repair Request\n\n"
-        f"The following llms.txt was generated but failed validation:\n\n"
-        f"```\n{original_content}\n```\n\n"
-        f"Validation errors:\n{error_block}\n\n"
-        f"Fix ALL validation errors and return the corrected output "
-        f"in a single ```llms.txt fenced block."
-    )
-    raw = call_llm(system_prompt, repair_prompt)
-    if raw is None:
-        return None
-    return extract_fenced_block(raw)
 
 
 def slug_to_title(path):
@@ -1315,170 +1198,149 @@ def detect_brand_from_homepage(html, domain):
     return {"name": name, "tagline": tagline}
 
 
-# ── Main Orchestrator ────────────────────────────────────────────────────
+# ── Mode: collect ────────────────────────────────────────────────────────────
 
 
-def generate_llms_txt(root_url, brand_info=None):
+def run_collect(root_url, brand_info=None):
     # type: (str, Optional[Dict]) -> Dict
-    """7-step pipeline orchestrator for generating llms.txt.
+    """Collect context, build prompts, generate template fallback.
 
-    Steps:
-      1. Collect context (URL discovery, scoring, scraping, evidence)
-      2. Detect brand from homepage if not provided
-      3. Build system + user prompts
-      4. Call LLM
-      5. Extract, validate, optionally repair LLM output
-      6. Fall back to template if LLM path failed
-      7. Return result dict
-
-    Returns dict with keys: generated_output, output_type, script_source,
-    status, errors.
+    Returns JSON-serialisable dict with:
+      context      — full context dict (minus homepage_html to save space)
+      brand_info   — detected or overridden brand info
+      system_prompt — system prompt for the agent to use
+      user_prompt   — user prompt for the agent to use
+      template_fallback — deterministic llms.txt (no LLM needed)
     """
-    errors = []  # type: List[str]
-
-    # ── Step 1: Collect context ────────────────────────────────────────
-    print("[llms-txt] Step 1/7: Collecting context...", file=sys.stderr)
+    print("[llms-txt] Collecting context...", file=sys.stderr)
     context = collect_llms_context(root_url)
 
-    # ── Step 2: Brand detection ────────────────────────────────────────
-    print("[llms-txt] Step 2/7: Detecting brand...", file=sys.stderr)
     if brand_info is None:
         homepage_html = context.get("homepage_html", "")
         domain = context.get("domain", "")
         brand_info = detect_brand_from_homepage(homepage_html, domain)
 
-    # ── Step 3: Build prompts ──────────────────────────────────────────
-    print("[llms-txt] Step 3/7: Building prompts...", file=sys.stderr)
+    print(f"[llms-txt] Brand: {brand_info.get('name', '?')}", file=sys.stderr)
+
     system_prompt = build_system_prompt()
     user_prompt = build_user_prompt(context, brand_info)
+    template = build_llms_txt_template(context, brand_info)
 
-    # ── Step 4: Call LLM ───────────────────────────────────────────────
-    print("[llms-txt] Step 4/7: Calling LLM...", file=sys.stderr)
-    raw_llm_output = call_llm(system_prompt, user_prompt, max_tokens=LLM_MAX_TOKENS)
+    # Strip homepage_html from context (too large for JSON output)
+    context_out = {k: v for k, v in context.items() if k != "homepage_html"}
 
-    # ── Step 5: Extract, validate, repair ──────────────────────────────
-    llm_content = None
-    if raw_llm_output:
-        print("[llms-txt] Step 5/7: Validating LLM output...", file=sys.stderr)
-        llm_content = extract_fenced_block(raw_llm_output)
-
-        if llm_content:
-            docs_base = context.get("docs_base")
-            validation_errors = validate_llms_txt(llm_content, root_url, docs_base)
-
-            if not validation_errors:
-                # Valid on first try
-                print("[llms-txt] Step 5/7: LLM output valid.", file=sys.stderr)
-                return {
-                    "generated_output": llm_content,
-                    "output_type": "code",
-                    "script_source": "llm",
-                    "status": "completed",
-                    "errors": [],
-                }
-            else:
-                # Attempt repair once
-                print(
-                    f"[llms-txt] Step 5/7: {len(validation_errors)} validation error(s), attempting repair...",
-                    file=sys.stderr,
-                )
-                repaired = repair_llms_txt(
-                    llm_content, validation_errors, system_prompt, user_prompt
-                )
-                if repaired:
-                    repair_errors = validate_llms_txt(repaired, root_url, docs_base)
-                    if not repair_errors:
-                        print("[llms-txt] Step 5/7: Repair succeeded.", file=sys.stderr)
-                        return {
-                            "generated_output": repaired,
-                            "output_type": "code",
-                            "script_source": "llm",
-                            "status": "completed",
-                            "errors": [],
-                        }
-                    else:
-                        errors.extend(repair_errors)
-                else:
-                    errors.extend(validation_errors)
-        else:
-            errors.append("Failed to extract fenced block from LLM output")
-    else:
-        print("[llms-txt] Step 4/7: LLM call returned nothing.", file=sys.stderr)
-        errors.append("LLM call returned no output")
-
-    # ── Step 6: Template fallback ──────────────────────────────────────
-    print("[llms-txt] Step 6/7: Falling back to template...", file=sys.stderr)
-    template_output = build_llms_txt_template(context, brand_info)
-
-    # ── Step 7: Return ─────────────────────────────────────────────────
-    print("[llms-txt] Step 7/7: Done.", file=sys.stderr)
     return {
-        "generated_output": template_output,
-        "output_type": "code",
-        "script_source": "template",
-        "status": "completed",
-        "errors": errors,
+        "context": context_out,
+        "brand_info": brand_info,
+        "system_prompt": system_prompt,
+        "user_prompt": user_prompt,
+        "template_fallback": template,
     }
+
+
+# ── Mode: validate ──────────────────────────────────────────────────────────
+
+
+def run_validate(content, root_url, docs_base=None):
+    # type: (str, str, Optional[str]) -> Dict
+    """Validate llms.txt content.
+
+    Returns JSON-serialisable dict with:
+      valid  — bool
+      errors — list of error strings
+    """
+    errors = validate_llms_txt(content, root_url, docs_base)
+    return {"valid": len(errors) == 0, "errors": errors}
+
+
+# ── Mode: template ──────────────────────────────────────────────────────────
+
+
+def run_template(root_url, brand_info=None):
+    # type: (str, Optional[Dict]) -> str
+    """Collect context and generate deterministic template. Returns llms.txt string."""
+    context = collect_llms_context(root_url)
+    if brand_info is None:
+        homepage_html = context.get("homepage_html", "")
+        domain = context.get("domain", "")
+        brand_info = detect_brand_from_homepage(homepage_html, domain)
+    return build_llms_txt_template(context, brand_info)
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 
+def _normalize_url(url):
+    # type: (str) -> str
+    """Prepend https:// if no protocol."""
+    if not url.startswith(("http://", "https://")):
+        return f"https://{url}"
+    return url
+
+
+def _parse_brand_args(args):
+    # type: (...) -> Optional[Dict]
+    """Build brand_info dict from CLI args, or None if neither set."""
+    if getattr(args, "brand", None) or getattr(args, "tagline", None):
+        return {"name": args.brand or "", "tagline": args.tagline or ""}
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate an optimised llms.txt for any domain."
+        description="Context collection, validation, and template generation for llms.txt."
     )
-    parser.add_argument(
-        "root_url",
-        help="Root URL of the website (e.g. https://example.com or example.com)",
+    sub = parser.add_subparsers(dest="mode", help="Operating mode")
+
+    # ── collect ───────────────────────────────────────────────────────
+    p_collect = sub.add_parser(
+        "collect",
+        help="Scrape site, build prompts and template. Outputs JSON.",
     )
-    parser.add_argument(
-        "--brand", default=None, help="Override auto-detected brand name"
+    p_collect.add_argument("root_url", help="Root URL (e.g. https://example.com)")
+    p_collect.add_argument("--brand", default=None, help="Override brand name")
+    p_collect.add_argument("--tagline", default=None, help="Override tagline")
+
+    # ── validate ──────────────────────────────────────────────────────
+    p_validate = sub.add_parser(
+        "validate",
+        help="Validate llms.txt content from stdin. Outputs JSON.",
     )
-    parser.add_argument(
-        "--tagline", default=None, help="Override auto-detected tagline"
+    p_validate.add_argument("root_url", help="Root URL for scope checking")
+    p_validate.add_argument("--docs-base", default=None, help="Docs base URL for scope")
+
+    # ── template ──────────────────────────────────────────────────────
+    p_template = sub.add_parser(
+        "template",
+        help="Generate deterministic llms.txt from live site data.",
     )
-    parser.add_argument(
-        "--output",
-        default="-",
-        help="Output file path (default: - for stdout)",
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        dest="json_output",
-        help="Output full result dict as JSON instead of just llms.txt content",
-    )
+    p_template.add_argument("root_url", help="Root URL (e.g. https://example.com)")
+    p_template.add_argument("--brand", default=None, help="Override brand name")
+    p_template.add_argument("--tagline", default=None, help="Override tagline")
 
     args = parser.parse_args()
 
-    # Normalize root_url: prepend https:// if no protocol
-    root_url = args.root_url
-    if not root_url.startswith(("http://", "https://")):
-        root_url = f"https://{root_url}"
+    if not args.mode:
+        parser.print_help()
+        sys.exit(1)
 
-    # Build brand_info override if any flags provided
-    brand_info = None
-    if args.brand or args.tagline:
-        brand_info = {
-            "name": args.brand or "",
-            "tagline": args.tagline or "",
-        }
+    root_url = _normalize_url(args.root_url)
 
-    result = generate_llms_txt(root_url, brand_info=brand_info)
+    if args.mode == "collect":
+        result = run_collect(root_url, brand_info=_parse_brand_args(args))
+        print(json.dumps(result, indent=2))
 
-    # Output
-    if args.json_output:
-        output_text = json.dumps(result, indent=2)
-    else:
-        output_text = result.get("generated_output", "")
+    elif args.mode == "validate":
+        content = sys.stdin.read()
+        if not content.strip():
+            print('{"valid": false, "errors": ["Empty input"]}')
+            sys.exit(1)
+        result = run_validate(content, root_url, docs_base=args.docs_base)
+        print(json.dumps(result, indent=2))
 
-    if args.output == "-":
-        print(output_text)
-    else:
-        with open(args.output, "w", encoding="utf-8") as f:
-            f.write(output_text)
-        print(f"[llms-txt] Written to {args.output}", file=sys.stderr)
+    elif args.mode == "template":
+        output = run_template(root_url, brand_info=_parse_brand_args(args))
+        print(output)
 
 
 if __name__ == "__main__":

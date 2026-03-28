@@ -209,7 +209,6 @@ class TestConstants(unittest.TestCase):
         self.assertEqual(gen.SHALLOW_CHAR_LIMIT, 900)
         self.assertEqual(gen.SIZE_BUDGET_KB, 100)
         self.assertEqual(gen.MAX_SITEMAP_URLS, 80)
-        self.assertEqual(gen.LLM_MAX_TOKENS, 4096)
         self.assertIn("/docs", gen.DOCS_PATH_PATTERNS)
         self.assertIn("/api", gen.DOCS_PATH_PATTERNS)
         self.assertEqual(len(gen.DOCS_PATH_PATTERNS), 7)
@@ -583,61 +582,6 @@ class TestBuildUserPrompt(unittest.TestCase):
 # ── Task 5: LLM Call with Multi-Provider Fallback ─────────────────────────────
 
 
-class TestCallLlm(unittest.TestCase):
-    def setUp(self):
-        self.mod = load_module()
-        # Save originals
-        self._orig_anthropic = self.mod._call_anthropic
-        self._orig_openai = self.mod._call_openai
-        self._orig_gemini = self.mod._call_gemini
-
-    def tearDown(self):
-        self.mod._call_anthropic = self._orig_anthropic
-        self.mod._call_openai = self._orig_openai
-        self.mod._call_gemini = self._orig_gemini
-
-    def test_returns_text_on_first_provider_success(self):
-        self.mod._call_anthropic = lambda s, u, m: "```llms.txt\n# Test\n```"
-        result = self.mod.call_llm("system", "user")
-        self.assertIn("# Test", result)
-
-    def test_falls_back_on_failure(self):
-        call_order = []
-        def fail_anthropic(s, u, m): raise RuntimeError("fail")
-        def succeed_openai(s, u, m):
-            call_order.append("openai")
-            return "```llms.txt\n# Fallback\n```"
-        self.mod._call_anthropic = fail_anthropic
-        self.mod._call_openai = succeed_openai
-        result = self.mod.call_llm("system", "user")
-        self.assertIn("# Fallback", result)
-        self.assertIn("openai", call_order)
-
-    def test_returns_none_when_all_fail(self):
-        self.mod._call_anthropic = lambda s, u, m: (_ for _ in ()).throw(RuntimeError("a"))
-        self.mod._call_openai = lambda s, u, m: (_ for _ in ()).throw(RuntimeError("b"))
-        self.mod._call_gemini = lambda s, u, m: (_ for _ in ()).throw(RuntimeError("c"))
-        result = self.mod.call_llm("system", "user")
-        self.assertIsNone(result)
-
-    def test_does_not_call_later_providers_on_success(self):
-        called = []
-        self.mod._call_anthropic = lambda s, u, m: "ok"
-        self.mod._call_openai = lambda s, u, m: called.append("openai") or "x"
-        self.mod._call_gemini = lambda s, u, m: called.append("gemini") or "x"
-        self.mod.call_llm("system", "user")
-        self.assertEqual(called, [])
-
-    def test_passes_max_tokens(self):
-        captured = {}
-        def capture_anthropic(s, u, m):
-            captured["max_tokens"] = m
-            return "ok"
-        self.mod._call_anthropic = capture_anthropic
-        self.mod.call_llm("s", "u", max_tokens=8192)
-        self.assertEqual(captured["max_tokens"], 8192)
-
-
 # ── Task 6: Output Validation ───────────────────────────────────────────────
 
 
@@ -765,31 +709,6 @@ class TestSlugToTitle(unittest.TestCase):
         self.assertEqual(mod.slug_to_title("/docs/getting_started"), "Getting Started")
 
 
-class TestRepairLlmsTxt(unittest.TestCase):
-    def setUp(self):
-        self._orig_call_llm = mod.call_llm
-
-    def tearDown(self):
-        mod.call_llm = self._orig_call_llm
-
-    def test_sends_errors_to_llm(self):
-        call_log = []
-
-        def mock_call(sys, usr, max_tokens=4096):
-            call_log.append(usr)
-            return '```llms.txt\n# Repaired\n```'
-
-        mod.call_llm = mock_call
-        result = mod.repair_llms_txt("original", ["Missing section: faqs"], "sys", "usr")
-        self.assertIn("# Repaired", result)
-        self.assertTrue(any("Missing section: faqs" in c for c in call_log))
-
-    def test_returns_none_on_failure(self):
-        mod.call_llm = lambda s, u, max_tokens=4096: None
-        result = mod.repair_llms_txt("original", ["error"], "sys", "usr")
-        self.assertIsNone(result)
-
-
 class TestBuildLlmsTxtTemplate(unittest.TestCase):
     def _sample_context(self):
         return {
@@ -876,14 +795,14 @@ class TestDetectBrand(unittest.TestCase):
         self.assertEqual(brand["tagline"], "Best platform ever")
 
 
-class TestGenerateLlmsTxt(unittest.TestCase):
+class TestRunCollect(unittest.TestCase):
+    """Tests for the collect mode — context collection + prompt + template."""
+
     def setUp(self):
         self.mod = load_module()
         self._orig_fetch = self.mod.fetch_url
-        self._orig_llm = self.mod.call_llm
-        # Mock fetch_url
         responses = {
-            "https://example.com": (200, '<html><head><title>ExCo — Platform</title></head><body><h1>ExCo</h1><a href="/pricing">P</a><a href="/docs">D</a></body></html>'),
+            "https://example.com": (200, '<html><head><title>ExCo \u2014 Platform</title></head><body><h1>ExCo</h1><a href="/pricing">P</a><a href="/docs">D</a></body></html>'),
             "https://example.com/robots.txt": (200, "Sitemap: https://example.com/sitemap.xml"),
             "https://example.com/sitemap.xml": (200, '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + ''.join(f'<url><loc>https://example.com/p{i}</loc></url>' for i in range(12)) + '</urlset>'),
             "https://example.com/pricing": (200, '<h1>Pricing</h1><p>Free. Pro $49/mo.</p>'),
@@ -893,81 +812,132 @@ class TestGenerateLlmsTxt(unittest.TestCase):
 
     def tearDown(self):
         self.mod.fetch_url = self._orig_fetch
-        self.mod.call_llm = self._orig_llm
 
-    def test_llm_success_path(self):
-        # Mock call_llm to return valid llms.txt
-        valid_block = self._make_valid_block("ExCo", "https://example.com")
-        self.mod.call_llm = lambda s, u, max_tokens=4096: f"```llms.txt\n{valid_block}\n```"
-        result = self.mod.generate_llms_txt("https://example.com", brand_info={"name": "ExCo", "tagline": "Platform"})
-        self.assertEqual(result["status"], "completed")
-        self.assertEqual(result["script_source"], "llm")
-        self.assertIn("ExCo", result["generated_output"])
-
-    def test_template_fallback(self):
-        self.mod.call_llm = lambda s, u, max_tokens=4096: None  # all fail
-        result = self.mod.generate_llms_txt("https://example.com", brand_info={"name": "ExCo", "tagline": ""})
-        self.assertEqual(result["status"], "completed")
-        self.assertEqual(result["script_source"], "template")
-        self.assertNotIn("POPULATE", result["generated_output"])
+    def test_returns_all_keys(self):
+        result = self.mod.run_collect("https://example.com", brand_info={"name": "ExCo", "tagline": "Platform"})
+        self.assertIn("context", result)
+        self.assertIn("brand_info", result)
+        self.assertIn("system_prompt", result)
+        self.assertIn("user_prompt", result)
+        self.assertIn("template_fallback", result)
 
     def test_auto_detects_brand(self):
-        self.mod.call_llm = lambda s, u, max_tokens=4096: None
-        result = self.mod.generate_llms_txt("https://example.com")
-        # Should detect "ExCo" from <title>ExCo — Platform</title>
-        self.assertIn("ExCo", result["generated_output"])
+        result = self.mod.run_collect("https://example.com")
+        self.assertEqual(result["brand_info"]["name"], "ExCo")
 
-    def _make_valid_block(self, brand, root):
-        # Build a minimal valid llms.txt
-        pages = "\n".join(f"- {root}/p{i}" for i in range(8))
-        return f"""# {brand}
+    def test_template_has_no_populate_markers(self):
+        result = self.mod.run_collect("https://example.com")
+        self.assertNotIn("POPULATE", result["template_fallback"])
+        self.assertNotIn("<!--", result["template_fallback"])
 
-> Platform for everything.
+    def test_context_excludes_homepage_html(self):
+        result = self.mod.run_collect("https://example.com")
+        self.assertNotIn("homepage_html", result["context"])
+
+    def test_system_prompt_has_14_sections(self):
+        result = self.mod.run_collect("https://example.com")
+        for section in ["Overview", "Who We Serve", "Products", "Solutions",
+                        "Key Resources", "FAQs", "Security", "Pricing", "Policies"]:
+            self.assertIn(section, result["system_prompt"])
+
+
+class TestRunValidate(unittest.TestCase):
+    """Tests for the validate mode."""
+
+    def _valid_content(self):
+        return """# Ramp
+
+> The corporate card.
 
 ## Overview
-- {brand} is a platform
+- Finance platform
 
 ## Who We Serve
-- Developers
+- Finance teams
 
 ## Products / Capabilities
-- **Platform** — core [Platform]({root}/product)
+- **Card** \u2014 [Card](https://ramp.com/card)
 
 ## Solutions / Use Cases
-- Building apps
+- Reducing spend
 
 ## Key Resources
-- [Docs]({root}/docs)
+- [Docs](https://ramp.com/docs)
 
 ## FAQs
-- **Q:** What is {brand}?
-  **A:** A platform. [Source]({root})
 - **Q:** Cost?
-  **A:** Free. [Source]({root}/pricing)
-- **Q:** Docs?
-  **A:** Yes. [Source]({root}/docs)
+  **A:** Free. [Source](https://ramp.com/pricing)
+- **Q:** Integrations?
+  **A:** Yes. [Source](https://ramp.com/integrations)
+- **Q:** Security?
+  **A:** SOC 2. [Source](https://ramp.com/security)
 
 ## Security & Compliance
-- Enterprise security
+- SOC 2
 
 ## Pricing & Plans
 - Free
-- [Pricing]({root}/pricing)
+- [Pricing](https://ramp.com/pricing)
 
 ## Policies
-- [Privacy]({root}/privacy)
+- [Privacy](https://ramp.com/privacy)
 
 ## Research / Blog
-- [Blog]({root}/blog)
+- [Blog](https://ramp.com/blog)
 
 ## Sitemap (canonical pages)
-{pages}
+- https://ramp.com
+- https://ramp.com/pricing
+- https://ramp.com/card
+- https://ramp.com/docs
+- https://ramp.com/blog
+- https://ramp.com/privacy
+- https://ramp.com/security
+- https://ramp.com/about
 
 ## Citation Guidance
-Cite: "{brand}" ({root})
+Cite: "Ramp" (https://ramp.com)
 
 ---
 *Last updated: 2026-03-28*"""
+
+    def test_valid_returns_true(self):
+        result = gen.run_validate(self._valid_content(), "https://ramp.com", "https://ramp.com/docs")
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["errors"], [])
+
+    def test_invalid_returns_errors(self):
+        content = self._valid_content().replace("## FAQs", "## Questions")
+        result = gen.run_validate(content, "https://ramp.com")
+        self.assertFalse(result["valid"])
+        self.assertGreater(len(result["errors"]), 0)
+
+
+class TestRunTemplate(unittest.TestCase):
+    """Tests for the template mode."""
+
+    def setUp(self):
+        self.mod = load_module()
+        self._orig_fetch = self.mod.fetch_url
+        responses = {
+            "https://example.com": (200, '<html><head><title>ExCo</title></head><body><h1>ExCo does things.</h1></body></html>'),
+            "https://example.com/robots.txt": (200, ""),
+            "https://example.com/sitemap.xml": (200, '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + ''.join(f'<url><loc>https://example.com/p{i}</loc></url>' for i in range(10)) + '</urlset>'),
+        }
+        self.mod.fetch_url = lambda url, timeout=15: responses.get(url, (404, ""))
+
+    def tearDown(self):
+        self.mod.fetch_url = self._orig_fetch
+
+    def test_returns_string(self):
+        result = self.mod.run_template("https://example.com")
+        self.assertIsInstance(result, str)
+        self.assertIn("## Overview", result)
+
+    def test_no_populate_markers(self):
+        result = self.mod.run_template("https://example.com")
+        self.assertNotIn("POPULATE", result)
+        self.assertNotIn("<!--", result)
 
 
 if __name__ == "__main__":

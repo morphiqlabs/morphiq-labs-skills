@@ -17,13 +17,33 @@ llms.txt tells AI systems (ChatGPT, Claude, Perplexity, Gemini) how to represent
 
 `scripts/generate-llms-txt.py` runs a fully autonomous 7-step pipeline:
 
+The script provides three CLI modes. The coding agent (Claude Code) is the LLM.
+
+### Collect (`python3 generate-llms-txt.py collect <url>`)
+
+Outputs JSON with everything the agent needs:
+
 1. **Context Collection** — Fetch homepage (extract anchors), robots.txt (Sitemap directives), sitemap.xml (all URLs), probe /docs (nav links). Score and rank all URLs by canonicality and nav prominence.
 2. **Two-Tier Scraping** — Top 4 pages: deep scrape (up to 3,000 chars). Remaining pages: shallow scrape (up to 900 chars). Total capped at 24,000 chars.
 3. **Evidence Building** — Extract date literals, price literals, headings, facts (customer counts, percentages), and key terms from scraped content.
 4. **Prompt Construction** — Build system prompt (14-section contract with identity, writing rules, validation instructions) and dynamic user prompt (runtime inputs, canonical URLs, live page content, grounding evidence, hard requirements).
-5. **LLM Call** — Multi-provider fallback: Anthropic → OpenAI → Gemini. Max 4,096 tokens. Output must be exactly one fenced code block labeled `llms.txt`.
-6. **Validation** — Check required sections present, FAQ format (3+ Q/A pairs with Source links), URL scope (all under root_url/docs_base), size budget (100KB), sitemap count (8-15). If invalid, one repair pass sends errors back to LLM.
-7. **Template Fallback** — If LLM + repair both fail, `build_llms_txt_template()` generates a deterministic llms.txt from evidence. No placeholder markers.
+5. **Template Fallback** — A deterministic llms.txt from evidence (no LLM), included in the output so the agent can use it if its own generation fails.
+
+### Validate (`echo "content" | python3 generate-llms-txt.py validate <url>`)
+
+Reads llms.txt from stdin. Checks required sections, FAQ format (3+ Q/A with Source links), URL scope, size budget (100KB), sitemap count (8-15). Returns JSON with `valid` bool and `errors` list.
+
+### Template (`python3 generate-llms-txt.py template <url>`)
+
+Generates a deterministic llms.txt directly from live site data. No LLM involved.
+
+### Agent Workflow
+
+1. Agent runs `collect` to get context, prompts, and template fallback
+2. Agent uses the system+user prompts to generate llms.txt (the agent IS the LLM)
+3. Agent runs `validate` to check the output
+4. If invalid, agent fixes errors and re-validates
+5. If agent can't produce valid output, it uses the `template_fallback` from step 1
 
 ## llms.txt Format (14 Sections)
 
