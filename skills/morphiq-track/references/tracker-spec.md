@@ -421,12 +421,12 @@ This is the historical record. Unlike Section 5 (which only shows current vs. pr
 ```markdown
 ## Content Performance
 
-| Artifact | Type | Target URL | Issue Fixed | Built Date | Cited | Cited By | First Cited |
-|----------|------|------------|-------------|------------|-------|----------|-------------|
-| build-003 | policy_file | /llms.txt | policy-no-llms-txt | 2025-03-20 | — | — | — |
-| build-005 | schema | /product | agentic-missing-product-schema | 2025-03-20 | yes | openai | 2025-03-25 |
-| build-007 | content | /blog/new-guide | brief-001 | 2025-03-22 | yes | perplexity | 2025-03-25 |
-| build-008 | content | /blog/pricing-comparison | brief-002 | 2025-03-24 | no | — | — |
+| Artifact | Type | Target URL | Issue Fixed | Built Date | Schema Status | Cited | Cited By | First Cited |
+|----------|------|------------|-------------|------------|---------------|-------|----------|-------------|
+| build-003 | policy_file | /llms.txt | policy-no-llms-txt | 2025-03-20 | — | — | — | — |
+| build-005 | schema | /product | agentic-missing-product-schema | 2025-03-20 | implemented | yes | openai | 2025-03-25 |
+| build-007 | content | /blog/new-guide | brief-001 | 2025-03-22 | — | yes | perplexity | 2025-03-25 |
+| build-008 | content | /blog/pricing-comparison | brief-002 | 2025-03-24 | — | no | — | — |
 ```
 
 ### KPIs
@@ -437,6 +437,7 @@ This is the historical record. Unlike Section 5 (which only shows current vs. pr
 | Artifacts Cited | Built artifacts that are now being cited by AI providers | Count where Cited=yes |
 | Citation Rate | % of built content that achieved citations | `(Artifacts Cited / Total Artifacts Built) * 100` |
 | Time to First Citation | Days from build to first citation | `First Cited date - Built Date` |
+| Schema Implementation Rate | % of schema artifacts that reached implemented or embedded status | `(implemented + embedded) / total schema artifacts * 100` |
 
 ### Purpose
 
@@ -446,9 +447,9 @@ This section answers: "Is the content we're creating actually working?" It track
 
 | Skill | Action |
 | --- | --- |
-| morphiq-build | Adds row for each new artifact |
+| morphiq-build | Adds row for each new artifact. For schema artifacts, sets Schema Status to `embedded` (new content) or `designed` (existing content). |
 | morphiq-track | Updates Cited/Cited By/First Cited columns by cross-referencing citation data with artifact target URLs |
-| morphiq-scan | No change |
+| morphiq-scan | For schema artifacts with `status: "designed"`, verifies schema presence on target page and transitions Schema Status to `implemented`. |
 | morphiq-rank | No change |
 
 ---

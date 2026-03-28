@@ -324,6 +324,13 @@ After the 5-step pipeline completes, morphiq-build runs additional processing:
 - Generates JSON-LD markup
 - See `references/schema-templates.md` for templates per content type
 
+Schema injection behavior depends on `entry_point`:
+
+- **`entry_point: "prompt"` (new content):** After generating JSON-LD, embed the `<script type="application/ld+json">` block(s) directly at the end of the content artifact's `content.body`. The content artifact ships complete — the implementer gets one artifact with body + schema already combined. A separate schema artifact is still emitted for auditability, with `status: "embedded"` and `bound_to` referencing the content artifact.
+- **`entry_point: "existing_content"` (optimization):** Schema artifacts remain separate. Each schema artifact gets `status: "designed"`. The build is not marked complete until all schema artifacts reach `status: "implemented"` or are explicitly skipped.
+
+**Verification gate (existing content only):** After all artifacts are produced, verify that schema artifacts have been added to the target page HTML. Schema artifacts transition from `"designed"` to `"implemented"` only after verification confirms the `<script type="application/ld+json">` block is present on the page. New content does not need this gate — the schema is already in the body.
+
 **Metadata Optimization** (handled in Step 5 output):
 
 - SEO meta description (150–160 chars)
@@ -364,3 +371,18 @@ The full pipeline produces a Build Output matching the PIPELINE.md contract:
 - Each schema injection becomes an artifact with `type: "schema"`
 - Each metadata optimization becomes an artifact with `type: "metadata"`
 - Policy file generation becomes an artifact with `type: "policy_file"`
+
+### Schema-to-Content Binding
+
+When `entry_point` is `"prompt"`, schema artifacts are **bound** to their corresponding content artifact:
+
+1. The content artifact's `content.body` includes `<script type="application/ld+json">` block(s) appended after the closing content (after the sources section or final FAQ).
+2. The schema artifact is still listed in `artifacts[]` for auditability, with `status: "embedded"` and a `bound_to` field referencing the content artifact's `artifact_id`.
+3. The schema artifact's `placement` field is informational only — the schema is already in the content.
+
+When `entry_point` is `"existing_content"`, schema artifacts are **independent**:
+
+1. The content artifact does not contain schema markup.
+2. The schema artifact has `status: "designed"` and must be implemented separately.
+3. After implementation, verification updates `status` to `"implemented"`.
+4. The build is not complete until all schema artifacts are `"implemented"` or explicitly skipped.

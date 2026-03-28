@@ -177,7 +177,11 @@ For the mapping of page types to expected schemas, SaaS detection logic, and det
 
 ## Build Output Integration
 
-Each schema injection produces a build artifact:
+Each schema injection produces a build artifact. Behavior depends on `entry_point`.
+
+### New content (`entry_point: "prompt"`) — Embedded mode
+
+The schema is embedded directly into the content artifact's `content.body` as `<script type="application/ld+json">` blocks appended at the end. A separate schema artifact is still emitted for auditability:
 
 ```json
 {
@@ -185,9 +189,32 @@ Each schema injection produces a build artifact:
   "page_url": "[target page URL]",
   "schema_type": "[Organization, Product, etc.]",
   "json_ld": "[complete JSON-LD block]",
-  "placement": "Inject into <head> as <script type=\"application/ld+json\">"
+  "placement": "Inject into <head> as <script type=\"application/ld+json\">",
+  "status": "embedded",
+  "bound_to": "[artifact_id of the content artifact containing this schema]"
 }
 ```
+
+`status: "embedded"` means this schema is already inside the content artifact — no separate implementation step is needed. `bound_to` links to the content artifact's `artifact_id`.
+
+### Existing content (`entry_point: "existing_content"`) — Separate mode
+
+The schema artifact is separate and must be implemented by the user or agent:
+
+```json
+{
+  "type": "schema",
+  "page_url": "[target page URL]",
+  "schema_type": "[Organization, Product, etc.]",
+  "json_ld": "[complete JSON-LD block]",
+  "placement": "Inject into <head> as <script type=\"application/ld+json\">",
+  "status": "designed"
+}
+```
+
+`status` transitions: `"designed"` (produced by build) → `"implemented"` (verified on the live page). The build is not complete until all schema artifacts reach `"implemented"` or are explicitly skipped.
+
+### Skipped schemas
 
 Skipped schemas are recorded in metadata:
 

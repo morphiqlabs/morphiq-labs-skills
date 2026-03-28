@@ -537,7 +537,8 @@ Post-pipeline: FAQs (`faq-guidelines.md`), metadata (`metadata-patterns.md`), JS
       "placement": {
         "instruction": "Add to <head> as <script type=\"application/ld+json\">",
         "selector": "head"
-      }
+      },
+      "status": "designed"
     },
     {
       "artifact_id": "build-003",
@@ -598,6 +599,13 @@ Post-pipeline: FAQs (`faq-guidelines.md`), metadata (`metadata-patterns.md`), JS
 }
 ```
 
+### Schema Handling by Entry Point
+
+Schema artifact behavior depends on `entry_point`:
+
+- **`entry_point: "prompt"` (new content):** Schema JSON-LD blocks are embedded directly into the content artifact's `content.body` (appended as `<script type="application/ld+json">` after the content). The schema artifact is still listed in `artifacts[]` for auditability with `status: "embedded"` and `bound_to` referencing the content artifact's `artifact_id`. No separate implementation step is needed.
+- **`entry_point: "existing_content"` (optimization):** Schema artifacts are separate with `status: "designed"`. After the schema is implemented on the target page, status transitions to `"implemented"`. The build is not considered complete until all schema artifacts reach `"implemented"` or are explicitly skipped.
+
 ### Field Definitions
 
 | Field | Type | Required | Description |
@@ -622,6 +630,8 @@ Post-pipeline: FAQs (`faq-guidelines.md`), metadata (`metadata-patterns.md`), JS
 | `artifacts[].placement` | object | yes | Where and how to insert the artifact |
 | `artifacts[].placement.instruction` | string | yes | Human/agent-readable placement instruction |
 | `artifacts[].placement.selector` | string/null | no | CSS selector if applicable |
+| `artifacts[].status` | enum/null | conditional | Schema artifact lifecycle. `"embedded"` (schema inside content artifact, `entry_point: "prompt"`), `"designed"` (separate, awaiting implementation), `"implemented"` (verified on page). Null for non-schema artifacts. |
+| `artifacts[].bound_to` | string/null | conditional | When `status` is `"embedded"`, references the `artifact_id` of the content artifact containing this schema. Null otherwise. |
 | `summary` | object | yes | Rollup of what was built |
 
 ---

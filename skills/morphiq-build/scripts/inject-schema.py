@@ -186,10 +186,16 @@ GENERATORS = {
 
 
 def inject_schemas(data: dict) -> dict:
-    """Generate all applicable schemas for a page."""
+    """Generate all applicable schemas for a page.
+
+    When entry_point is "prompt" and content_body is provided, embeds
+    <script type="application/ld+json"> blocks into the content body.
+    """
     url = data.get("url", "")
     page_type = data.get("page_type", "other")
     is_saas = data.get("is_saas", False)
+    entry_point = data.get("entry_point", "existing_content")
+    content_body = data.get("content_body", "")
 
     expected = list(PAGE_TYPE_SCHEMAS.get(page_type, ["BreadcrumbList"]))
 
@@ -228,14 +234,30 @@ def inject_schemas(data: dict) -> dict:
         else:
             skipped.append({"type": schema_type, "reason": f"No generator for type {schema_type}"})
 
-    return {
+    # Set status based on entry_point
+    status = "embedded" if entry_point == "prompt" else "designed"
+    for item in generated:
+        item["status"] = status
+
+    result = {
         "url": url,
         "page_type": page_type,
+        "entry_point": entry_point,
         "schemas_generated": generated,
         "schemas_skipped": skipped,
         "total_generated": len(generated),
         "total_skipped": len(skipped),
     }
+
+    # For new content, embed schemas into content body
+    if entry_point == "prompt" and content_body and generated:
+        embedded = content_body.rstrip()
+        for item in generated:
+            json_ld_str = json.dumps(item["json_ld"], indent=2)
+            embedded += f'\n\n<script type="application/ld+json">\n{json_ld_str}\n</script>'
+        result["embedded_content_body"] = embedded
+
+    return result
 
 
 def main():

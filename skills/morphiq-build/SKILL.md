@@ -73,7 +73,7 @@ For full pipeline spec, read `references/content-lab-pipeline.md`.
 
 | Process | What It Does | Reference |
 |---|---|---|
-| Schema Injection | Classify content type, generate JSON-LD | `references/schema-templates.md` |
+| Schema Injection | Classify content type, generate JSON-LD. New content: embed schema in content artifact. Existing content: separate schema artifact with implementation tracking. | `references/schema-templates.md` |
 | Metadata Optimization | Meta description, slug, OG tags | `references/metadata-patterns.md` |
 | llms.txt Scaffolding | Generate llms.txt from sitemap | `references/llms-txt-spec.md` |
 | Content Restructuring | Fix headings, split paragraphs | — |
