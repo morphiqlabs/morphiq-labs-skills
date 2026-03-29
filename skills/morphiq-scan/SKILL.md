@@ -2,15 +2,22 @@
 name: morphiq-scan
 description: This skill should be used when the user asks to "audit a website for AI visibility", "scan a domain", "check AI readiness", "evaluate content quality", "run a Morphiq Scan", "check if a site is optimized for LLMs", or mentions scanning a website for LLM citation readiness. Performs a full AI visibility audit across 5 categories (agentic readiness, content quality, chunking & retrieval, query fanout, policy files) and scores the domain on a 100-point rubric.
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
   author: morphiq-labs
 ---
+
+## EXECUTION INSTRUCTIONS
+
+You are now executing Morphiq Scan. This is a WORKFLOW — you must perform each step below by fetching real URLs, analyzing real content, and computing real scores. Do NOT just describe what the skill does. Do NOT print help text. EXECUTE the steps.
+
+**Input:** The user provides a domain URL. Extract it from their message.
+**Output:** You MUST write a Scan Report JSON file to `MORPHIQ-SCAN.json` in the workspace root AND display a human-readable summary.
 
 ## Pipeline Position
 
 Step 1 of 4 — entry point.
 - **Input:** A domain URL from the user.
-- **Output:** Scan Report (JSON) → consumed by morphiq-rank.
+- **Output:** Scan Report JSON file (`MORPHIQ-SCAN.json`) → consumed by morphiq-rank.
 - **Data contract:** See `PIPELINE.md` §1 for the Scan Report schema.
 
 ## Purpose
@@ -20,6 +27,8 @@ Morphiq Scan audits a website's readiness for AI visibility. It answers two ques
 ## Workflow
 
 ### Step 1: Discover Pages
+
+DO THIS NOW — fetch these URLs using your web/fetch tool:
 
 1. Fetch `{domain}/robots.txt` — extract sitemap URLs
 2. Fetch `{domain}/sitemap.xml` if not found in robots.txt
@@ -88,11 +97,29 @@ For the full rubric, read `references/scoring-rubric.md`.
 
 ### Step 8: Generate Issues
 
-Create issues with: id, category, severity, summary, detail, affected_urls, remediation_hint. Use issue ID patterns from the pipeline contract.
+For every finding, create an issue. Use EXACT issue IDs from the catalog — examples:
+- `policy-no-llms-txt` (not "PF-001")
+- `agentic-missing-product-schema` (not "AR-001")
+- `content-no-tldr` (not "CQ-001")
+- `chunking-buried-answer` (not "CR-001")
+- `fanout-no-comparison-content` (not "QF-001")
+
+Each issue MUST have: `id`, `category`, `severity`, `summary`, `detail`, `affected_urls`, `remediation_hint`.
+
+**Thoroughness check:** A site scoring 60/100 typically has 15–25 issues. If you found fewer than 10, you missed checks. Go back and re-evaluate each page against ALL issue types in the catalog.
 
 ### Step 9: Produce Scan Report
 
-Assemble Scan Report JSON (`PIPELINE.md` §1): domain metadata, per-page scores, issues, schema detection, policy file status, query fanout analysis.
+Write the Scan Report as JSON to `MORPHIQ-SCAN.json` in the workspace root. The JSON MUST follow the schema in `PIPELINE.md` §1.
+
+**Required fields you MUST include:**
+- `overall_score` — the aggregate 0–100 score
+- `scores` — per-category breakdown: `{ agentic_readiness: X, content_quality: X, chunking_retrieval: X, query_fanout: X, policy_files: X }`
+- `pages[]` — per-page results with `url`, `page_type`, `score`, `issues[]`, `schema_detected`, `schema_missing`, `meta`
+- `policy_files` — robots.txt and llms.txt audit results
+- `query_fanout` — simulated queries with `model`, `citation_weight`, coverage score, gaps, and suggested content
+
+After writing the JSON file, display a human-readable summary showing: overall score, per-category scores, top issues by severity, and page-by-page highlights.
 
 ## SaaS Detection
 
