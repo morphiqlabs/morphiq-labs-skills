@@ -2,7 +2,7 @@
 name: morphiq-rank
 description: This skill should be used when the user asks to "create issues from a scan", "prioritize what to fix", "rank the issues", "build a roadmap from scan results", "run Morphiq Rank", or mentions creating a prioritized roadmap from scan results. Consumes a Morphiq Scan Report, applies issue creation criteria with impact/effort weighting, and organizes issues into 4 progressive discovery tiers.
 metadata:
-  version: "0.1.1"
+  version: "0.2.0"
   author: morphiq-labs
 ---
 
@@ -10,8 +10,14 @@ metadata:
 
 You are now executing Morphiq Rank. This is a WORKFLOW — you must read the Scan Report, create issues, compute priority scores, and produce a Prioritized Roadmap. Do NOT just describe what the skill does. EXECUTE the steps.
 
-**Input:** Read `MORPHIQ-SCAN.json` from the workspace root (produced by morphiq-scan). If the scan just ran in this session, use the scan results from context.
-**Output:** You MUST write a Prioritized Roadmap JSON file to `MORPHIQ-RANK.json` in the workspace root AND display a human-readable summary.
+**Input:** Read **`MORPHIQ-SCAN.json`** from the workspace root (produced by morphiq-scan). If that file doesn't exist, also try `MORPHIQ_SCAN_REPORT.json` (legacy name). If the scan just ran in this session, use the scan results from context.
+**Output:** You MUST write a Prioritized Roadmap JSON file to **`MORPHIQ-RANK.json`** (exactly this filename, with hyphens not underscores) in the workspace root AND display a human-readable summary.
+
+### HARD RULES — VALIDATE BEFORE WRITING OUTPUT
+
+1. **Output filename:** `MORPHIQ-RANK.json` — NOT `MORPHIQ_ROADMAP.json`, NOT `morphiq-rank.json`, NOT any other variation.
+2. **Issue IDs are a closed set.** You MUST only use IDs from `references/issue-catalog.md`. Do NOT invent descriptive IDs. Wrong: `policy-llms-txt-missing`, `agentic-readiness-thin-schema`, `content-quality-thin-body-copy`. Correct: `policy-no-llms-txt`, `agentic-missing-product-schema`, `content-thin-page`. Before writing the JSON, validate every `issue_id` against the catalog.
+3. **Field names are exact.** Use `issue_id` not `id`. Use `impact_score` not `priority_score`. Use `remediation` not `remediation_hint`. See the JSON template in Step 7.
 
 ## Pipeline Position
 

@@ -2,7 +2,7 @@
 name: morphiq-scan
 description: This skill should be used when the user asks to "audit a website for AI visibility", "scan a domain", "check AI readiness", "evaluate content quality", "run a Morphiq Scan", "check if a site is optimized for LLMs", or mentions scanning a website for LLM citation readiness. Performs a full AI visibility audit across 5 categories (agentic readiness, content quality, chunking & retrieval, query fanout, policy files) and scores the domain on a 100-point rubric.
 metadata:
-  version: "0.1.1"
+  version: "0.2.0"
   author: morphiq-labs
 ---
 
@@ -11,7 +11,13 @@ metadata:
 You are now executing Morphiq Scan. This is a WORKFLOW — you must perform each step below by fetching real URLs, analyzing real content, and computing real scores. Do NOT just describe what the skill does. Do NOT print help text. EXECUTE the steps.
 
 **Input:** The user provides a domain URL. Extract it from their message.
-**Output:** You MUST write a Scan Report JSON file to `MORPHIQ-SCAN.json` in the workspace root AND display a human-readable summary.
+**Output:** You MUST write a Scan Report JSON file to **`MORPHIQ-SCAN.json`** (exactly this filename, with hyphens not underscores) in the workspace root AND display a human-readable summary.
+
+### HARD RULES — VALIDATE BEFORE WRITING OUTPUT
+
+1. **Output filename:** `MORPHIQ-SCAN.json` — NOT `MORPHIQ_SCAN_REPORT.json`, NOT `morphiq-scan.json`, NOT any other variation.
+2. **Issue IDs are a closed set.** You MUST only use IDs from the catalog in Step 8. If an ID is not in that table, it is INVALID. Do NOT generate descriptive IDs like `policy-llms-txt-missing` or `agentic-readiness-thin-schema`. The correct IDs are `policy-no-llms-txt` and `agentic-missing-product-schema`. Before writing the JSON, validate every issue ID against the table.
+3. **Field names are exact.** Use `scores` not `category_scores`. Use `scores_max` not `max_scores`. Use `schema_detected` not `schemas_found`. See the JSON template in Step 9.
 
 ## Pipeline Position
 
