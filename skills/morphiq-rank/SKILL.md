@@ -100,13 +100,109 @@ Cross-tier: `T1 → T2 → T3 → T4`. Higher-tier issues on same URLs only beco
 
 ### Step 7: Produce Prioritized Roadmap
 
-Write the Prioritized Roadmap as JSON to `MORPHIQ-RANK.json` in the workspace root. The JSON MUST follow the schema in `PIPELINE.md` §2.
+Write the Prioritized Roadmap as JSON to `MORPHIQ-RANK.json` in the workspace root. The JSON MUST use the **exact field names and structure** shown below. Do NOT rename, flatten, or restructure fields.
 
-**Required in the JSON:**
-- `source_scan_score` — the overall score from the scan
-- `total_issues` — count of all issues
-- `tiers[]` — each tier with its issues sorted by `priority_score` (descending)
-- Each issue MUST include: `id` (from catalog), `severity`, `priority_score` (numeric), `summary`, `detail`, `affected_urls`, `remediation_hint`, `dependencies`
+```json
+{
+  "schema_version": "1.0",
+  "generated_at": "ISO-8601 timestamp",
+  "domain": "example.com",
+  "source_scan_score": 62,
+  "total_issues": 24,
+  "tiers": [
+    {
+      "tier": 1,
+      "name": "Foundation — Crawlability & Policy",
+      "description": "Ensure AI crawlers can access and understand the site",
+      "estimated_impact": "high",
+      "actions": [
+        {
+          "priority": 1,
+          "issue_id": "policy-no-llms-txt",
+          "category": "policy_files",
+          "severity": "high",
+          "impact_score": 90,
+          "effort": "medium",
+          "summary": "No llms.txt file found",
+          "remediation": "Create llms.txt with site summary and key pages",
+          "affected_urls": [],
+          "page_type": null,
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "tier": 2,
+      "name": "Structure — Schema & Metadata",
+      "description": "Add machine-readable structure so AI can extract facts",
+      "estimated_impact": "high",
+      "actions": [
+        {
+          "priority": 3,
+          "issue_id": "agentic-missing-product-schema",
+          "category": "agentic_readiness",
+          "severity": "high",
+          "impact_score": 85,
+          "effort": "medium",
+          "summary": "No Product schema on product page",
+          "remediation": "Add JSON-LD Product schema",
+          "affected_urls": ["https://example.com/product"],
+          "page_type": "product",
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "tier": 3,
+      "name": "Content — Depth & Coverage",
+      "description": "Fill content gaps that prevent AI citations",
+      "estimated_impact": "medium",
+      "actions": [
+        {
+          "priority": 5,
+          "issue_id": "fanout-no-pricing-content",
+          "category": "query_fanout",
+          "severity": "high",
+          "impact_score": 80,
+          "effort": "high",
+          "summary": "No pricing content for pricing sub-queries",
+          "remediation": "Create dedicated pricing page",
+          "affected_urls": [],
+          "page_type": "pricing",
+          "depends_on": [],
+          "fanout_context": {
+            "triggering_sub_queries": [
+              {
+                "query": "site:example.com pricing official",
+                "model_origin": "openai",
+                "prompt_type": "category",
+                "citation_weight": "site_targeted",
+                "parent_prompt": "best widgets for teams 2026"
+              }
+            ],
+            "competitor_sources": []
+          }
+        }
+      ]
+    },
+    {
+      "tier": 4,
+      "name": "Optimization — Retrieval & Citation Quality",
+      "description": "Fine-tune content for LLM chunking and citation patterns",
+      "estimated_impact": "low",
+      "actions": []
+    }
+  ]
+}
+```
+
+**Critical field rules:**
+- Top-level MUST have `source_scan_score`, `total_issues`, `domain`, `tiers[]`
+- Each tier has `tier` (number), `name`, `description`, `estimated_impact`, `actions[]`
+- Each action uses `issue_id` (NOT `id`), `impact_score` (NOT `priority_score`), `remediation` (NOT `remediation_hint`), `depends_on` (NOT `dependencies`)
+- `fanout_context` is ONLY for `fanout-*` issues — includes `triggering_sub_queries[]` with `model_origin`, `citation_weight`, `parent_prompt`
+- Actions are sorted by `priority` (ascending = highest priority first) within each tier
+- Issue IDs MUST come from `references/issue-catalog.md`
 
 After writing the JSON file, display a human-readable roadmap showing: tier-by-tier breakdown, issue count per tier, top 3 issues per tier with severity and affected URLs, and the recommended execution order.
 

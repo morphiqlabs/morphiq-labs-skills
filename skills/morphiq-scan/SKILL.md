@@ -97,27 +97,148 @@ For the full rubric, read `references/scoring-rubric.md`.
 
 ### Step 8: Generate Issues
 
-For every finding, create an issue. Use EXACT issue IDs from the catalog — examples:
-- `policy-no-llms-txt` (not "PF-001")
-- `agentic-missing-product-schema` (not "AR-001")
-- `content-no-tldr` (not "CQ-001")
-- `chunking-buried-answer` (not "CR-001")
-- `fanout-no-comparison-content` (not "QF-001")
+For every finding, create an issue. Use EXACT issue IDs from the catalog below. Do NOT invent IDs — every issue ID you emit must appear in this table.
 
-Each issue MUST have: `id`, `category`, `severity`, `summary`, `detail`, `affected_urls`, `remediation_hint`.
+**Issue ID Quick Reference** (use exactly these IDs):
+
+| Category | Valid Issue IDs |
+|---|---|
+| `policy_files` | `policy-no-llms-txt`, `policy-weak-llms-txt`, `policy-blocks-gptbot`, `policy-blocks-google-extended`, `policy-blocks-anthropic`, `policy-blocks-perplexity`, `policy-no-robots-txt`, `policy-invalid-robots-syntax` |
+| `agentic_readiness` | `agentic-missing-product-schema`, `agentic-missing-article-schema`, `agentic-missing-faq-schema`, `agentic-missing-howto-schema`, `agentic-missing-breadcrumb`, `agentic-no-canonical`, `agentic-broken-heading-hierarchy`, `agentic-weak-meta-description`, `agentic-missing-og-tags`, `agentic-no-semantic-html`, `agentic-duplicate-schema` |
+| `content_quality` | `content-thin-page`, `content-low-word-count`, `content-no-tldr`, `content-no-author`, `content-unsourced-stats`, `content-wrong-citation-format`, `content-no-expert-quotes`, `content-stale-date`, `content-thin-faq`, `content-no-examples`, `content-generic-advice` |
+| `chunking_retrieval` | `chunking-broken-heading-hierarchy`, `chunking-generic-headings`, `chunking-overscoped-section`, `chunking-buried-answer`, `chunking-long-paragraphs`, `chunking-no-faq-coverage`, `chunking-no-top-summary`, `chunking-missing-query-terms` |
+| `query_fanout` | `fanout-no-comparison-content`, `fanout-no-pricing-content`, `fanout-no-alternative-content`, `fanout-missing-entity-coverage`, `fanout-wrong-page-type`, `fanout-no-site-match`, `fanout-unanswered-subquery`, `fanout-thin-topic-coverage`, `fanout-no-docs-content` |
+
+Each issue MUST have: `id`, `category`, `severity`, `summary`, `detail`, `affected_element` (or null), `remediation_hint`.
 
 **Thoroughness check:** A site scoring 60/100 typically has 15–25 issues. If you found fewer than 10, you missed checks. Go back and re-evaluate each page against ALL issue types in the catalog.
 
 ### Step 9: Produce Scan Report
 
-Write the Scan Report as JSON to `MORPHIQ-SCAN.json` in the workspace root. The JSON MUST follow the schema in `PIPELINE.md` §1.
+Write the Scan Report as JSON to `MORPHIQ-SCAN.json` in the workspace root. The JSON MUST use the **exact field names and structure** shown below. Do NOT rename, flatten, or restructure fields.
 
-**Required fields you MUST include:**
-- `overall_score` — the aggregate 0–100 score
-- `scores` — per-category breakdown: `{ agentic_readiness: X, content_quality: X, chunking_retrieval: X, query_fanout: X, policy_files: X }`
-- `pages[]` — per-page results with `url`, `page_type`, `score`, `issues[]`, `schema_detected`, `schema_missing`, `meta`
-- `policy_files` — robots.txt and llms.txt audit results
-- `query_fanout` — simulated queries with `model`, `citation_weight`, coverage score, gaps, and suggested content
+```json
+{
+  "schema_version": "1.0",
+  "generated_at": "ISO-8601 timestamp",
+  "domain": "example.com",
+  "pages_scanned": 10,
+  "overall_score": 62,
+  "scores": {
+    "agentic_readiness": 26,
+    "content_quality": 14,
+    "chunking_retrieval": 10,
+    "query_fanout": 6,
+    "policy_files": 6
+  },
+  "scores_max": {
+    "agentic_readiness": 45,
+    "content_quality": 20,
+    "chunking_retrieval": 15,
+    "query_fanout": 10,
+    "policy_files": 10
+  },
+  "pages": [
+    {
+      "url": "https://example.com/product",
+      "page_type": "product",
+      "title": "Page Title",
+      "score": 58,
+      "issues": [
+        {
+          "id": "agentic-missing-product-schema",
+          "category": "agentic_readiness",
+          "severity": "high",
+          "summary": "No Product schema detected",
+          "detail": "Full explanation of AI visibility impact",
+          "affected_element": null,
+          "remediation_hint": "Actionable fix instruction"
+        }
+      ],
+      "schema_detected": ["Organization"],
+      "schema_missing": ["Product", "FAQPage", "BreadcrumbList"],
+      "meta": {
+        "title_length": 42,
+        "description_length": 148,
+        "og_image": true,
+        "canonical": "https://example.com/product",
+        "h1_count": 1,
+        "heading_hierarchy_valid": true,
+        "word_count": 620
+      }
+    }
+  ],
+  "policy_files": {
+    "robots_txt": {
+      "exists": true,
+      "allows_ai_crawlers": false,
+      "blocked_agents": ["GPTBot", "Google-Extended"],
+      "issues": [
+        {
+          "id": "policy-blocks-gptbot",
+          "category": "policy_files",
+          "severity": "high",
+          "summary": "robots.txt blocks GPTBot",
+          "detail": "Explanation",
+          "remediation_hint": "Fix instruction"
+        }
+      ]
+    },
+    "llms_txt": {
+      "exists": false,
+      "valid": false,
+      "issues": [
+        {
+          "id": "policy-no-llms-txt",
+          "category": "policy_files",
+          "severity": "high",
+          "summary": "No llms.txt file found",
+          "detail": "Explanation",
+          "remediation_hint": "Fix instruction"
+        }
+      ]
+    }
+  },
+  "query_fanout": {
+    "simulated_queries": [
+      {
+        "query": "What does Example Company do?",
+        "model": "all",
+        "prompt_type": "brand",
+        "citation_weight": "silent",
+        "page_type_source": "homepage"
+      }
+    ],
+    "fanout_depth": {
+      "total_subqueries": 12,
+      "by_model": { "gpt-5.4": 5, "claude": 2, "gemini": 5 },
+      "by_prompt_type": { "brand": 2, "category": 4, "comparison": 6 }
+    },
+    "coverage_score": 6,
+    "gaps": [
+      "No pricing page or structured pricing content found"
+    ],
+    "suggested_content": [
+      {
+        "query": "Example Company vs competitors",
+        "model_origin": "all",
+        "prompt_type": "comparison",
+        "suggestion": "Create a comparison page",
+        "rationale": "Why models would ask this and why it matters"
+      }
+    ]
+  }
+}
+```
+
+**Critical field rules:**
+- Use `scores` and `scores_max` (NOT `category_scores` or `max_scores`)
+- Each page in `pages[]` MUST have `schema_detected`, `schema_missing`, and `meta` objects
+- `policy_files` has nested `robots_txt` and `llms_txt` objects, each with their own `issues[]`
+- `query_fanout.simulated_queries[]` each need `model`, `prompt_type`, `citation_weight`, `page_type_source`
+- `query_fanout.fanout_depth` is a required nested object with `total_subqueries`, `by_model`, `by_prompt_type`
+- `citation_weight` values: `"citation_producing"` (1.5x), `"silent"` (0.5x), `"site_targeted"` (2x)
+- Issue IDs MUST come from the catalog — see Step 8
 
 After writing the JSON file, display a human-readable summary showing: overall score, per-category scores, top issues by severity, and page-by-page highlights.
 
