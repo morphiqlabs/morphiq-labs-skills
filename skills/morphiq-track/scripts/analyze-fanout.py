@@ -47,7 +47,6 @@ PROMPT_TYPE_SEVERITY = {
     "competitor": "medium",
     "organic": "medium",
     "howto": "medium",
-    "generic": "low",
     "brand_specific": "low",
     "faq": "low",
 }

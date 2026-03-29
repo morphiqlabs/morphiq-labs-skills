@@ -35,16 +35,15 @@ per_provider_count = ceil(total_prompts / active_provider_count)
 
 ### Initial Analysis (Onboarding)
 
-70 prompts total, distributed across 6 GEO categories:
+50 prompts total, distributed across 5 GEO categories:
 
 | Category | Share | Count | Brand Name? | What It Tests |
 |---|---|---|---|---|
-| Organic | 40% | ~28 | No | Unprompted discovery — does AI recommend without being asked? |
-| Competitor | 8–12% | ~8–9 | Mixed | Competitive positioning — "alternatives to X" |
-| How-to Guides | 12% | ~8–9 | No | Solution discovery — tool-seeking problem queries |
-| Generic | 10% | ~7 | No | Broad category search — is the brand part of the category? |
-| Brand-Specific | 11% | ~7–8 | Yes | Direct brand knowledge — does AI know who you are? |
-| FAQ | 15% | ~10–11 | No | Educational/learning context — "how/what/why" queries |
+| Organic | 45% | ~23 | No | Unprompted discovery — does AI recommend without being asked? |
+| Competitor | 11% | ~6 | Mixed | Competitive positioning — "alternatives to X" |
+| How-to Guides | 14% | ~7 | No | Solution discovery — tool-seeking problem queries |
+| Brand-Specific | 13% | ~7 | Yes | Direct brand knowledge — does AI know who you are? |
+| FAQ | 17% | ~9 | No | Educational/learning context — "how/what/why" queries |
 
 ### Quality Rules Per GEO Category
 
@@ -53,7 +52,6 @@ per_provider_count = ceil(total_prompts / active_provider_count)
 | **Organic** | <120 chars, concise (<20 words), 10–35% start with "Best", must express buying/evaluation intent |
 | **Competitor** | 70% discovery ("alternatives to X"), 30% direct comparison ("[Brand] vs X") — NEVER "Competitor A vs Competitor B" without brand |
 | **How-to** | Must include tool-seeking phrase ("what tools help with this?", "what platforms do people recommend?") |
-| **Generic** | 5–15 words, must anchor to specific workflow/vertical/goal (not just category name) |
 | **FAQ** | Must start with question word (How, What, Why, Can, Is, Does, Which) |
 | **Brand-Specific** | Must contain brand name |
 
@@ -72,14 +70,13 @@ per_provider_count = ceil(total_prompts / active_provider_count)
 
 ### GEO Categories → Pipeline Prompt Types
 
-The 6 GEO categories map to the 9 pipeline prompt types used in MORPHIQ-TRACKER.md:
+The 5 GEO categories map to the 9 pipeline prompt types used in MORPHIQ-TRACKER.md:
 
 | GEO Category | Pipeline Prompt Types |
 |---|---|
 | Organic | `category`, `discovery`, `recommendation` |
 | Competitor | `comparison` |
 | How-to | `use_case`, `problem_seeking` |
-| Generic | `category`, `feature` |
 | Brand-Specific | `brand` |
 | FAQ | `use_case`, `problem_seeking` |
 
@@ -113,14 +110,13 @@ This is a separate scoring system from the Technical Score. For the relationship
 Beyond the simple average, a weighted score values different discovery intents:
 
 ```
-Weighted GEO = (Organic × 0.40) + (Competitor × 0.20) + (How-to × 0.20) + (Generic × 0.10) + (Brand × 0.10)
+Weighted GEO = (Organic × 0.45) + (Competitor × 0.22) + (How-to × 0.22) + (Brand × 0.11)
 ```
 
-- **Organic at 40%:** Unprompted discovery — highest value signal
-- **Competitor at 20%:** Head-to-head competitive positioning
-- **How-to at 20%:** Solution recommendation context
-- **Generic at 10%:** Category membership baseline
-- **Brand-Specific at 10%:** Sanity check — expected to be high for any real brand
+- **Organic at 45%:** Unprompted discovery — highest value signal
+- **Competitor at 22%:** Head-to-head competitive positioning
+- **How-to at 22%:** Solution recommendation context
+- **Brand-Specific at 11%:** Sanity check — expected to be high for any real brand
 
 FAQ category excluded from weighted score (uses standard average only).
 

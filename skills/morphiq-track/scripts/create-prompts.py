@@ -2,10 +2,10 @@
 """create-prompts.py — Generate a prompt set following the Morphiq prompt taxonomy.
 
 Usage:
-  First run:      python3 create-prompts.py --state-dir morphiq-track/ --brand "BrandName" --category "SaaS" [--count 70] [--competitors "A,B,C"]
+  First run:      python3 create-prompts.py --state-dir morphiq-track/ --brand "BrandName" --category "SaaS" [--count 50] [--competitors "A,B,C"]
   Subsequent:     python3 create-prompts.py --state-dir morphiq-track/
   With refresh:   python3 create-prompts.py --state-dir morphiq-track/ --refresh
-  Legacy (no state): python3 create-prompts.py --brand "BrandName" --category "SaaS" [--count 70] [--competitors "A,B,C"]
+  Legacy (no state): python3 create-prompts.py --brand "BrandName" --category "SaaS" [--count 50] [--competitors "A,B,C"]
 
 Output: JSON prompts with type, category, and metadata. With --state-dir, writes to prompts.json and manifest.json.
 """
@@ -16,14 +16,13 @@ import os
 import sys
 from datetime import datetime, timedelta
 
-# GEO category distribution (initial 70 prompts)
+# GEO category distribution (initial 50 prompts)
 GEO_DISTRIBUTION = {
-    "organic":        0.40,   # ~28 prompts, no brand name
-    "competitor":     0.10,   # ~7 prompts, mixed brand usage
-    "howto":          0.12,   # ~8 prompts, no brand name
-    "generic":        0.10,   # ~7 prompts, no brand name
-    "brand_specific": 0.11,   # ~8 prompts, brand name required
-    "faq":            0.15,   # ~10 prompts, no brand name
+    "organic":        0.45,   # ~23 prompts, no brand name
+    "competitor":     0.11,   # ~6 prompts, mixed brand usage
+    "howto":          0.14,   # ~7 prompts, no brand name
+    "brand_specific": 0.13,   # ~7 prompts, brand name required
+    "faq":            0.17,   # ~9 prompts, no brand name
 }
 
 # Pipeline prompt type distribution (for fanout-weighted tracking)
@@ -44,7 +43,6 @@ GEO_TO_PIPELINE = {
     "organic":        ["category", "discovery", "recommendation"],
     "competitor":     ["comparison"],
     "howto":          ["use_case", "problem_seeking"],
-    "generic":        ["category", "feature"],
     "brand_specific": ["brand"],
     "faq":            ["use_case", "problem_seeking"],
 }
@@ -69,12 +67,6 @@ TEMPLATES = {
         "what tools help with {use_case} for {vertical} teams",
         "what platforms do people recommend for {action}",
         "best way to {action} in 2026",
-    ],
-    "generic": [
-        "{category} platform for {vertical}",
-        "{category} tools for {use_case}",
-        "{category} solutions for small business 2026",
-        "enterprise {category} software",
     ],
     "brand_specific": [
         "what is {brand}",
@@ -111,7 +103,7 @@ def distribute_counts(total: int, distribution: dict) -> dict:
 
 
 def generate_prompts(brand: str, category: str, competitors: list,
-                     count: int = 70, use_cases: list = None,
+                     count: int = 50, use_cases: list = None,
                      verticals: list = None, actions: list = None) -> list:
     """Generate a prompt set following the taxonomy."""
     use_cases = use_cases or ["general workflow", "team collaboration", "automation"]
@@ -289,7 +281,7 @@ def main():
     parser.add_argument("--brand", default=None, help="Brand name")
     parser.add_argument("--category", default=None, help="Product category")
     parser.add_argument("--competitors", default="", help="Comma-separated competitor names")
-    parser.add_argument("--count", type=int, default=70, help="Total prompt count")
+    parser.add_argument("--count", type=int, default=50, help="Total prompt count")
     parser.add_argument("--domain", default=None, help="Domain (used with --state-dir)")
     parser.add_argument("--state-dir", default=None, help="State directory (e.g., morphiq-track/)")
     parser.add_argument("--refresh", action="store_true", help="Generate new recommendations if cooldown elapsed")

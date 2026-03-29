@@ -1,100 +1,130 @@
 # Morphiq Skills
 
-AI visibility audit, prioritization, content optimization, and monitoring — as installable agent skills.
+AI visibility that maintains itself — audit, prioritize, fix, measure, repeat.
 
-Morphiq Skills encodes [Mudra Labs'](https://trymudra.com) AI visibility methodology into reusable skills for any compatible coding agent (Claude Code, Cursor, Copilot, Codex, etc.). Built on the [Agent Skills](https://agentskills.io) open standard.
+Morphiq Skills is a self-maintaining AI visibility pipeline. It audits your website, prioritizes what to fix, generates optimized content and schema, then measures the impact across AI providers — and loops back to do it again. Each cycle sharpens your visibility in ChatGPT, Claude, Gemini, and Perplexity.
+
+Built on the [Agent Skills](https://agentskills.io) open standard. Works with any compatible coding agent.
 
 ## Install
 
+**Claude Code (plugin):**
+
 ```bash
-npx skills add morphiqlabs/morphiq-labs-skills
+/plugin marketplace add morphiqlabs/morphiq-labs-skills
 ```
+
+**Any agent (universal):**
+
+```bash
+# Install all skills
+npx skills add morphiqlabs/morphiq-labs-skills
+
+# Install a specific skill
+npx skills add morphiqlabs/morphiq-labs-skills --skill morphiq-scan
+
+# Preview available skills
+npx skills add morphiqlabs/morphiq-labs-skills --list
+```
+
+## How It Works
+
+The four skills form a continuous loop — not a one-shot audit:
+
+```
+morphiq-scan → morphiq-rank → morphiq-build → morphiq-track
+                  ^                                  |
+                  └──────────────────────────────────┘
+```
+
+1. **Scan** your site across 5 AI visibility categories (100-point rubric)
+2. **Rank** findings into a prioritized, tiered roadmap
+3. **Build** fixes — schema, content, policy files, metadata
+4. **Track** impact across AI providers, surface new gaps
+5. Feed deltas back to Rank. Repeat.
+
+Each skill produces structured JSON that the next skill consumes. Data contracts are defined in [PIPELINE.md](PIPELINE.md).
 
 ## Skills
 
 ### morphiq-scan — Audit
+
 Crawls a target domain and produces a full AI visibility audit.
 
-- Technical structure + agentic readiness analysis
-- Schema markup coverage evaluation
-- Content quality + E-E-A-T assessment
+- Technical structure and agentic readiness analysis
+- Schema markup coverage evaluation (17 AEO-relevant types)
+- Content quality and E-E-A-T assessment
 - LLM chunking and retrieval quality scoring
-- Query fan-out analysis (simulated AI sub-questions)
-- Policy file detection (robots.txt, llms.txt)
-- 100-point scoring against the Morphiq rubric
+- Query fan-out simulation (per-model sub-question chains)
+- Policy file detection (robots.txt, llms.txt, sitemap.xml)
+- 100-point scoring across 5 weighted categories
 
-**Output:** Structured scan report (JSON) → feeds into morphiq-rank
+**Output:** Scan Report (JSON) -> morphiq-rank
 
 ### morphiq-rank — Prioritize
-Takes the scan output and produces a prioritized action roadmap.
+
+Takes scan output and produces a prioritized action roadmap.
 
 - Weights every issue by AI visibility impact
-- Organizes into 4 progressive discovery tiers
-- Ranks by effort vs ROI
-- Flags policy file and schema issues as high-priority
-- Tracks dependencies between issues
+- Organizes into 4 progressive discovery tiers (Foundation -> Structure -> Content -> Optimization)
+- Ranks by severity, page impact, citation potential, and effort
+- Cross-category deduplication prevents duplicate work
+- Progressive reveal — surfaces issues incrementally, not all at once
 
-**Output:** Tiered roadmap (JSON) → feeds into morphiq-build
+**Output:** Prioritized Roadmap (JSON) -> morphiq-build
 
 ### morphiq-build — Implement
-Creates and optimizes content for AI visibility. Two entry points:
 
-**From existing content** — runs the 5-step Content Lab pipeline:
+Creates and optimizes content for AI visibility. Three entry points:
+
+**From roadmap** — processes issues by tier and priority, routes each to the appropriate fix workflow.
+
+**From prompt** — generates AEO-structured content from a topic and optional sources.
+
+**From existing content** — runs the 6-step Content Lab pipeline:
 1. Ingest sources (URLs, PDFs, raw text)
 2. Extract and structure content
-3. Analyze gaps vs query space
-4. Live web research to fill gaps
-5. Generate final optimized content
+3. Analyze gaps against query space
+4. Research live web to fill gaps
+5. Generate optimized content with schema
+6. Validate coverage against target queries
 
-**From user prompt** — generates AEO-structured content directly.
+Also handles: JSON-LD injection, llms.txt generation, metadata optimization, FAQ creation, citation formatting.
 
-Also handles: schema injection, llms.txt creation, metadata optimization, FAQ generation.
-
-**Output:** Build artifacts (JSON) → feeds into morphiq-track
+**Output:** Build Artifacts (JSON) -> morphiq-track
 
 ### morphiq-track — Monitor
-Recurring measurement of AI visibility across providers.
 
-- Generates prompt sets (brand, category, comparison, feature, use case)
+Measures AI visibility across providers and drives the feedback loop.
+
+- Generates 50 prompts across 5 GEO categories (organic, competitor, how-to, brand, FAQ)
 - Queries OpenAI, Gemini, Perplexity, and Anthropic APIs
-- Captures structured responses per provider
-- Computes Share of Voice: (Company Mentions / Total Mentions) x 100
-- Diffs results against previous runs
-- Generates delta report with flagged actions
+- Computes Share of Voice, citation rates, and brand positioning
+- Tracks deltas between runs — what improved, what regressed
+- Drives 3 ongoing workflows: content optimization, content creation, query fanout expansion
+- Maintains persistent state in MORPHIQ-TRACKER.md and JSON state layer
 
-**Output:** Delta report (JSON) → loops back to morphiq-rank
+**Output:** Delta Report (JSON) -> loops back to morphiq-rank
 
-## Pipeline
+## Scoring
 
-The four skills form a sequential pipeline:
-
-```
-morphiq-scan → morphiq-rank → morphiq-build → morphiq-track
-                  ↑                                    │
-                  └────────────────────────────────────┘
-```
-
-Each skill produces structured JSON that the next skill consumes. Data contracts are defined in [PIPELINE.md](PIPELINE.md).
-
-## Scoring Categories
-
-| Category | Max Points | Covers |
-|----------|-----------|--------|
-| Agentic Readiness | 45 | Technical structure, schema markup, machine-readability |
+| Category | Points | What It Measures |
+|----------|--------|-----------------|
+| Agentic Readiness | 45 | Schema markup, metadata, machine-readability |
 | Content Quality | 20 | Depth, E-E-A-T, citations, examples |
 | Chunking & Retrieval | 15 | Heading hierarchy, paragraph quality, retrieval resilience |
-| Query Fan-Out | 10 | Sub-question coverage, reasoning retrieval support |
-| Policy Files | 10 | robots.txt, llms.txt configuration |
+| Query Fan-Out | 10 | Sub-question coverage across AI reasoning chains |
+| Policy Files | 10 | robots.txt, llms.txt, sitemap configuration |
 
 ## API Keys (morphiq-track)
 
 morphiq-track queries AI providers directly. Set these environment variables:
 
 ```
-OPENAI_API_KEY        # web_search tool with forced tool_choice
-ANTHROPIC_API_KEY     # tool use pattern
-PERPLEXITY_API_KEY    # native search behavior
-GEMINI_API_KEY        # grounding with URL resolution
+OPENAI_API_KEY        # GPT web_search tool
+ANTHROPIC_API_KEY     # Claude tool use pattern
+PERPLEXITY_API_KEY    # Native search behavior
+GEMINI_API_KEY        # Grounding with URL resolution
 ```
 
 ## Project Structure
@@ -103,7 +133,6 @@ GEMINI_API_KEY        # grounding with URL resolution
 morphiq-labs-skills/
 ├── README.md
 ├── PIPELINE.md          # Data contracts between skills
-├── PROGRESS.md          # Build tracker
 ├── LICENSE
 └── skills/
     ├── morphiq-scan/    # Audit
@@ -113,10 +142,21 @@ morphiq-labs-skills/
 ```
 
 Each skill contains:
-- `SKILL.md` — Workflow instructions + frontmatter (the skill itself)
-- `references/` — Deep methodology loaded conditionally
+- `SKILL.md` — Workflow instructions and frontmatter (the skill definition)
+- `references/` — Deep methodology docs, loaded on demand
 - `scripts/` — Deterministic utilities the agent calls
-- `evals/` — User-facing self-tests
+- `evals/` — Self-tests and evaluation fixtures
+
+## Sources
+
+The methodology behind these skills draws from:
+
+- [Anthropic — Contextual Retrieval](https://www.anthropic.com/research/contextual-retrieval) — Chunking, embedding, and reranking research
+- [Google — Ranking Systems Guide](https://developers.google.com/search/docs/appearance/ranking-systems-guide) — Passage ranking and structured data
+- [HuggingFace — Chunking Strategies (2601.14123)](https://huggingface.co/papers/2601.14123) — Chunk size vs retrieval reliability
+- [HuggingFace — BRIGHT Benchmark (2407.12883)](https://huggingface.co/papers/2407.12883) — Reasoning-intensive retrieval
+- [Search Engine Land — ChatGPT Citation Study](https://searchengineland.com/chatgpt-citations-content-study-469483) — Citation position and content structure
+- [llms-txt Specification](https://llmstxt.org) — Machine-readable site overview format
 
 ## License
 
@@ -124,6 +164,6 @@ Apache-2.0
 
 ## Links
 
-- [Morphiq](https://trymudra.com) — AI visibility platform
-- [Agent Skills Standard](https://agentskills.io) — Skill specification
+- [Morphiq Labs](https://trymorphiq.com) — Self driving AI visibility platform
+- [Agent Skills Standard](https://agentskills.io) — Open skill specification
 - [skills.sh](https://skills.sh) — Agent skills marketplace

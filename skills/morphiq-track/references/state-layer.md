@@ -47,7 +47,7 @@ The entry point. Any script that needs to find state files reads this first.
       "date": "2026-03-27",
       "is_baseline": false,
       "results_path": "morphiq-track/results/track-2026-03-27.json",
-      "prompt_count": 70,
+      "prompt_count": 50,
       "providers_queried": ["openai", "perplexity", "anthropic", "gemini"]
     },
     {
@@ -56,7 +56,7 @@ The entry point. Any script that needs to find state files reads this first.
       "date": "2026-03-25",
       "is_baseline": true,
       "results_path": "morphiq-track/results/track-2026-03-25.json",
-      "prompt_count": 70,
+      "prompt_count": 50,
       "providers_queried": ["openai", "perplexity", "anthropic", "gemini"]
     }
   ]
@@ -119,16 +119,15 @@ Persists the complete output of `create-prompts.py` plus tracking state accumula
     }
   ],
   "validation": {
-    "total_prompts": 70,
+    "total_prompts": 50,
     "valid": true,
     "issues": [],
     "distribution": {
-      "organic": 28,
-      "competitor": 7,
-      "howto": 8,
-      "generic": 7,
-      "brand_specific": 8,
-      "faq": 10
+      "organic": 23,
+      "competitor": 6,
+      "howto": 7,
+      "brand_specific": 7,
+      "faq": 7
     }
   },
   "recommendations": {
@@ -154,7 +153,7 @@ Persists the complete output of `create-prompts.py` plus tracking state accumula
 | `prompts[]` | array | yes | Full prompt set |
 | `prompts[].id` | string | yes | Unique prompt ID (`prompt-NNN`) |
 | `prompts[].text` | string | yes | The prompt text |
-| `prompts[].geo_category` | string | yes | GEO category (organic, competitor, howto, generic, brand_specific, faq) |
+| `prompts[].geo_category` | string | yes | GEO category (organic, competitor, howto, brand_specific, faq) |
 | `prompts[].pipeline_type` | string | yes | Pipeline type (brand, category, comparison, feature, use_case, technical_eval, discovery, recommendation, problem_seeking) |
 | `prompts[].contains_brand` | boolean | yes | Whether prompt text contains brand name |
 | `prompts[].contains_temporal` | boolean | yes | Whether prompt has year/temporal markers |
@@ -219,7 +218,7 @@ Each tracking run produces a new file. Never overwritten. This is the versioned 
       "error": null
     }
   ],
-  "total": 70,
+  "total": 50,
   "summary": {
     "mentioned": 41,
     "cited": 14,
@@ -464,7 +463,7 @@ The state layer gives morphiq-build structured, machine-readable access to every
 
 - **Results files:** Keep the last 10 runs in `morphiq-track/results/`. Older files can be pruned. Scripts handle missing files gracefully (the manifest entry remains but `results_path` points to a deleted file).
 - **manifest.json:** Retains all run entries (metadata only, lightweight).
-- **prompts.json:** Single file. Grows modestly — prompts are capped at ~70-90.
+- **prompts.json:** Single file. Grows modestly — prompts are capped at ~50-70.
 - **citations.json:** Single file. Bounded by the prompt set size.
 - **Git history** preserves the full audit trail regardless of file deletion.
 

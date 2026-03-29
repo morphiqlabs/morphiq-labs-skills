@@ -34,16 +34,15 @@ For state layer specification, read `references/state-layer.md`.
 
 ### Step 1: Generate Prompts
 
-**First run only.** Generate 70 prompts across 6 GEO categories:
+**First run only.** Generate 50 prompts across 5 GEO categories:
 
 | Category | Share | Brand Name? |
 |---|---|---|
-| Organic | 40% | No |
-| Competitor | 8–12% | Mixed |
-| How-to | 12% | No |
-| Generic | 10% | No |
-| Brand-Specific | 11% | Yes |
-| FAQ | 15% | No |
+| Organic | 45% | No |
+| Competitor | 11% | Mixed |
+| How-to | 14% | No |
+| Brand-Specific | 13% | Yes |
+| FAQ | 17% | No |
 
 Apply quality rules per category. Add temporal markers to 70%+ prompts. Include entities in comparison/technical prompts.
 
@@ -89,7 +88,7 @@ For selection rules and distribution, read `references/query-targets.md`.
 
 ```
 GEO = mean(provider_scores)
-Weighted GEO = (Organic × 0.40) + (Competitor × 0.20) + (How-to × 0.20) + (Generic × 0.10) + (Brand × 0.10)
+Weighted GEO = (Organic × 0.45) + (Competitor × 0.22) + (How-to × 0.22) + (Brand × 0.11)
 ```
 
 Thresholds: ≥60 Excellent, ≥40 Good, ≥20 Fair, ≥10 Poor, <10 Very Poor.

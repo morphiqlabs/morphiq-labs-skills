@@ -180,18 +180,17 @@ For full SoV methodology including mention types and invisible SoV, read `share-
 
 ---
 
-## GEO Prompt Categories (6 Categories)
+## GEO Prompt Categories (5 Categories)
 
-The GEO scoring system uses a 6-category prompt taxonomy that maps to the 9 pipeline types above. This taxonomy covers the full spectrum of how a potential customer might discover a brand through AI:
+The GEO scoring system uses a 5-category prompt taxonomy that maps to the 9 pipeline types above. This taxonomy covers the full spectrum of how a potential customer might discover a brand through AI:
 
-| Category | Share | Count (of 70) | Brand Name? | What It Tests |
+| Category | Share | Count (of 50) | Brand Name? | What It Tests |
 |---|---|---|---|---|
-| Organic | 40% | ~28 | No | Unprompted discovery — does AI recommend without being asked? |
-| Competitor | 8–12% | ~8–9 | Mixed | Competitive positioning — "alternatives to X" |
-| How-to Guides | 12% | ~8–9 | No | Solution discovery — tool-seeking problem queries |
-| Generic | 10% | ~7 | No | Broad category search — is the brand part of the category? |
-| Brand-Specific | 11% | ~7–8 | Yes | Direct brand knowledge — does AI know who you are? |
-| FAQ | 15% | ~10–11 | No | Educational/learning context — "how/what/why" queries |
+| Organic | 45% | ~23 | No | Unprompted discovery — does AI recommend without being asked? |
+| Competitor | 11% | ~6 | Mixed | Competitive positioning — "alternatives to X" |
+| How-to Guides | 14% | ~7 | No | Solution discovery — tool-seeking problem queries |
+| Brand-Specific | 13% | ~7 | Yes | Direct brand knowledge — does AI know who you are? |
+| FAQ | 17% | ~9 | No | Educational/learning context — "how/what/why" queries |
 
 ### GEO Category → Pipeline Type Mapping
 
@@ -200,7 +199,6 @@ The GEO scoring system uses a 6-category prompt taxonomy that maps to the 9 pipe
 | Organic | `category`, `discovery`, `recommendation` |
 | Competitor | `comparison` |
 | How-to | `use_case`, `problem_seeking` |
-| Generic | `category`, `feature` |
 | Brand-Specific | `brand` |
 | FAQ | `use_case`, `problem_seeking` |
 
@@ -211,7 +209,6 @@ The GEO scoring system uses a 6-category prompt taxonomy that maps to the 9 pipe
 | **Organic** | <120 chars, concise (<20 words), 10–35% start with "Best", must express buying/evaluation intent |
 | **Competitor** | 70% discovery ("alternatives to X"), 30% direct comparison ("[Brand] vs X") — NEVER "Competitor A vs Competitor B" without brand |
 | **How-to** | Must include tool-seeking phrase ("what tools help with this?", "what platforms do people recommend?") |
-| **Generic** | 5–15 words, must anchor to specific workflow/vertical/goal (not just category name) |
 | **FAQ** | Must start with question word (How, What, Why, Can, Is, Does, Which) |
 | **Brand-Specific** | Must contain brand name |
 
@@ -222,16 +219,15 @@ The GEO scoring system uses a 6-category prompt taxonomy that maps to the 9 pipe
 Beyond the simple average mention rate, the GEO scoring applies intent weights to each category:
 
 ```
-Weighted GEO = (Organic × 0.40) + (Competitor × 0.20) + (How-to × 0.20) + (Generic × 0.10) + (Brand × 0.10)
+Weighted GEO = (Organic × 0.45) + (Competitor × 0.22) + (How-to × 0.22) + (Brand × 0.11)
 ```
 
 ### Why These Weights
 
-- **Organic at 40%:** Unprompted discovery is the hardest and most valuable signal. If AI recommends a brand without being asked, it has earned genuine authority.
-- **Competitor at 20%:** Head-to-head competitive positioning — does the brand win comparisons?
-- **How-to at 20%:** Solution context — is the brand recommended when users solve problems?
-- **Generic at 10%:** Category membership — a baseline signal.
-- **Brand-Specific at 10%:** Should be high for any real brand. A sanity check, not a differentiator.
+- **Organic at 45%:** Unprompted discovery is the hardest and most valuable signal. If AI recommends a brand without being asked, it has earned genuine authority.
+- **Competitor at 22%:** Head-to-head competitive positioning — does the brand win comparisons?
+- **How-to at 22%:** Solution context — is the brand recommended when users solve problems?
+- **Brand-Specific at 11%:** Should be high for any real brand. A sanity check, not a differentiator.
 
 FAQ category excluded from the weighted score (uses standard average only).
 
@@ -252,6 +248,6 @@ These are two different weighting systems:
 | System | Operates On | Purpose |
 |---|---|---|
 | **Fan-out weights** (above) | 9 pipeline prompt types | Weights SoV by sub-query surface area per prompt |
-| **Intent weights** (this section) | 6 GEO categories | Weights GEO score by discovery intent value |
+| **Intent weights** (this section) | 5 GEO categories | Weights GEO score by discovery intent value |
 
 Both are valid perspectives. Fan-out weights answer "how much visibility surface does each prompt type create?" Intent weights answer "how valuable is each type of discovery for the brand?" The tracker records both.

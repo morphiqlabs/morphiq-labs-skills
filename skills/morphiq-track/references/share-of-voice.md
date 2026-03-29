@@ -211,7 +211,7 @@ For each tracked prompt, record:
 
 ### 2. Per-Category
 
-Aggregate mention rates within each GEO category (Organic, Competitor, How-to, Generic, Brand-Specific, FAQ) and each pipeline prompt type:
+Aggregate mention rates within each GEO category (Organic, Competitor, How-to, Brand-Specific, FAQ) and each pipeline prompt type:
 
 ```
 category_SoV = (brand_mentions_in_category / total_mentions_in_category) × 100
