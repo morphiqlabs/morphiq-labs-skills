@@ -1,8 +1,9 @@
 ---
 name: morphiq-rank
-description: This skill should be used when the user asks to "create issues from a scan", "prioritize what to fix", "rank the issues", "build a roadmap from scan results", "run Morphiq Rank", or mentions creating a prioritized roadmap from scan results. Consumes a Morphiq Scan Report, applies issue creation criteria with impact/effort weighting, and organizes issues into 4 progressive discovery tiers.
+description: Create issues from a scan report, prioritize what to fix, rank by impact. Consumes MORPHIQ-SCAN.json and produces a tiered roadmap with weighted priority scores.
+allowed-tools: Read, Write, Grep, Glob
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   author: morphiq-labs
 ---
 

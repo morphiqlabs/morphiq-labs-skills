@@ -1,8 +1,9 @@
 ---
 name: morphiq-build
-description: This skill should be used when the user asks to "fix the issues", "optimize existing content", "create new content for AI visibility", "run Morphiq Build", "generate schema markup", "create an llms.txt file", "run the content lab", or mentions building content fixes, generating schema, rewriting content for AI citations, or creating policy files. Consumes a Prioritized Roadmap (or user prompt, or existing content) and produces build artifacts through a 6-step content lab pipeline.
+description: Fix AI visibility issues, generate schema markup, create llms.txt, optimize content for LLM citations. Consumes MORPHIQ-RANK.json and produces build artifacts through a 6-step content lab.
+allowed-tools: WebFetch, Read, Write, Grep, Glob, Bash
 metadata:
-  version: "0.1.0"
+  version: "0.3.0"
   author: morphiq-labs
 ---
 

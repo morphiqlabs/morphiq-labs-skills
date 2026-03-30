@@ -1,8 +1,10 @@
 ---
 name: morphiq-scan
-description: This skill should be used when the user asks to "audit a website for AI visibility", "scan a domain", "check AI readiness", "evaluate content quality", "run a Morphiq Scan", "check if a site is optimized for LLMs", or mentions scanning a website for LLM citation readiness. Performs a full AI visibility audit across 5 categories (agentic readiness, content quality, chunking & retrieval, query fanout, policy files) and scores the domain on a 100-point rubric.
+description: Audit a website for AI visibility. Scan a domain, check AI readiness, evaluate LLM citation quality. Scores across 5 categories on a 100-point rubric and produces a detailed scan report JSON.
+argument-hint: <url>
+allowed-tools: WebFetch, Read, Write, Grep, Glob, Bash
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   author: morphiq-labs
 ---
 
