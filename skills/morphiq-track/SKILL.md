@@ -1,9 +1,10 @@
 ---
 name: morphiq-track
 description: Track AI visibility, measure share of voice, check GEO score, monitor LLM citations. Queries AI providers, produces delta reports, and maintains MORPHIQ-TRACKER.md as persistent state.
+argument-hint: "[build-file]"
 allowed-tools: WebFetch, Read, Write, Grep, Glob, Bash
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
   author: morphiq-labs
 ---
 

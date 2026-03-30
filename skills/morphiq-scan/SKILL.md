@@ -4,7 +4,7 @@ description: Audit a website for AI visibility. Scan a domain, check AI readines
 argument-hint: <url>
 allowed-tools: WebFetch, Read, Write, Grep, Glob, Bash
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
   author: morphiq-labs
 ---
 
@@ -12,7 +12,7 @@ metadata:
 
 You are now executing Morphiq Scan. This is a WORKFLOW — you must perform each step below by fetching real URLs, analyzing real content, and computing real scores. Do NOT just describe what the skill does. Do NOT print help text. EXECUTE the steps.
 
-**Input:** The user provides a domain URL. Extract it from their message.
+**Input:** The target domain is: $ARGUMENTS
 **Output:** You MUST write a Scan Report JSON file to **`MORPHIQ-SCAN.json`** (exactly this filename, with hyphens not underscores) in the workspace root AND display a human-readable summary.
 
 ### HARD RULES — VALIDATE BEFORE WRITING OUTPUT
@@ -112,12 +112,14 @@ For every finding, create an issue. Use EXACT issue IDs from the catalog below. 
 | Category | Valid Issue IDs |
 |---|---|
 | `policy_files` | `policy-no-llms-txt`, `policy-weak-llms-txt`, `policy-blocks-gptbot`, `policy-blocks-google-extended`, `policy-blocks-anthropic`, `policy-blocks-perplexity`, `policy-no-robots-txt`, `policy-invalid-robots-syntax` |
-| `agentic_readiness` | `agentic-missing-product-schema`, `agentic-missing-article-schema`, `agentic-missing-faq-schema`, `agentic-missing-howto-schema`, `agentic-missing-breadcrumb`, `agentic-no-canonical`, `agentic-broken-heading-hierarchy`, `agentic-weak-meta-description`, `agentic-missing-og-tags`, `agentic-no-semantic-html`, `agentic-duplicate-schema` |
+| `agentic_readiness` | `agentic-missing-product-schema`, `agentic-missing-organization-schema`, `agentic-missing-article-schema`, `agentic-missing-faq-schema`, `agentic-missing-howto-schema`, `agentic-missing-breadcrumb`, `agentic-no-canonical`, `agentic-broken-heading-hierarchy`, `agentic-weak-meta-description`, `agentic-missing-og-tags`, `agentic-no-semantic-html`, `agentic-duplicate-schema` |
 | `content_quality` | `content-thin-page`, `content-low-word-count`, `content-no-tldr`, `content-no-author`, `content-unsourced-stats`, `content-wrong-citation-format`, `content-no-expert-quotes`, `content-stale-date`, `content-thin-faq`, `content-no-examples`, `content-generic-advice` |
 | `chunking_retrieval` | `chunking-broken-heading-hierarchy`, `chunking-generic-headings`, `chunking-overscoped-section`, `chunking-buried-answer`, `chunking-long-paragraphs`, `chunking-no-faq-coverage`, `chunking-no-top-summary`, `chunking-missing-query-terms` |
 | `query_fanout` | `fanout-no-comparison-content`, `fanout-no-pricing-content`, `fanout-no-alternative-content`, `fanout-missing-entity-coverage`, `fanout-wrong-page-type`, `fanout-no-site-match`, `fanout-unanswered-subquery`, `fanout-thin-topic-coverage`, `fanout-no-docs-content` |
 
 Each issue MUST have: `id`, `category`, `severity`, `summary`, `detail`, `affected_element` (or null), `remediation_hint`.
+
+**Fanout issues:** After completing the query fanout simulation (Step 6), generate `fanout-*` issues for every gap. Each gap in `query_fanout.gaps` MUST have a corresponding issue with a valid `fanout-*` ID. For example, if a gap says "No comparison content", emit an issue with `id: "fanout-no-comparison-content"`. Place these issues in the top-level `pages` array under the most relevant page, or if domain-level, under the homepage entry.
 
 **Thoroughness check:** A site scoring 60/100 typically has 15–25 issues. If you found fewer than 10, you missed checks. Go back and re-evaluate each page against ALL issue types in the catalog.
 
@@ -246,6 +248,7 @@ Write the Scan Report as JSON to `MORPHIQ-SCAN.json` in the workspace root. The 
 - `query_fanout.simulated_queries[]` each need `model`, `prompt_type`, `citation_weight`, `page_type_source`
 - `query_fanout.fanout_depth` is a required nested object with `total_subqueries`, `by_model`, `by_prompt_type`
 - `citation_weight` values: `"citation_producing"` (1.5x), `"silent"` (0.5x), `"site_targeted"` (2x)
+- `prompt_type` values: `"brand"`, `"category"`, `"comparison"`, `"technical_eval"`, `"use_case"`, `"discovery"`, `"recommendation"`, `"problem_seeking"`
 - Issue IDs MUST come from the catalog — see Step 8
 
 After writing the JSON file, display a human-readable summary showing: overall score, per-category scores, top issues by severity, and page-by-page highlights.

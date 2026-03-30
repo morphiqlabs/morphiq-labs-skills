@@ -36,6 +36,7 @@ Issues with machine-readable structure that prevent AI agents from extracting fa
 | Issue ID | Severity | Trigger | Remediation |
 |---|---|---|---|
 | `agentic-missing-product-schema` | high | Product page has no JSON-LD Product markup | Add Product schema with name, description, offers, aggregateRating |
+| `agentic-missing-organization-schema` | high | About/home page has no Organization or Person schema | Add Organization schema with name, founders (Person), foundingDate, description |
 | `agentic-missing-article-schema` | high | Blog/article page has no Article or BlogPosting schema | Add Article/BlogPosting schema with headline, author, datePublished |
 | `agentic-missing-faq-schema` | medium | Page has FAQ content but no FAQPage schema | Add FAQPage schema wrapping existing Q&A content |
 | `agentic-missing-howto-schema` | medium | Step-by-step content has no HowTo schema | Add HowTo schema with step names and descriptions |

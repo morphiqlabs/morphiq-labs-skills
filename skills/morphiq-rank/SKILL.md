@@ -1,9 +1,10 @@
 ---
 name: morphiq-rank
 description: Create issues from a scan report, prioritize what to fix, rank by impact. Consumes MORPHIQ-SCAN.json and produces a tiered roadmap with weighted priority scores.
+argument-hint: "[scan-file]"
 allowed-tools: Read, Write, Grep, Glob
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
   author: morphiq-labs
 ---
 

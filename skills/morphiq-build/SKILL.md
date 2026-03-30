@@ -1,9 +1,10 @@
 ---
 name: morphiq-build
 description: Fix AI visibility issues, generate schema markup, create llms.txt, optimize content for LLM citations. Consumes MORPHIQ-RANK.json and produces build artifacts through a 6-step content lab.
+argument-hint: "[roadmap-file]"
 allowed-tools: WebFetch, Read, Write, Grep, Glob, Bash
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
   author: morphiq-labs
 ---
 

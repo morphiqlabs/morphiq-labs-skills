@@ -27,6 +27,48 @@ npx skills add morphiqlabs/morphiq-labs-skills --skill morphiq-scan
 npx skills add morphiqlabs/morphiq-labs-skills --list
 ```
 
+## Usage
+
+After installing, invoke skills with `/` followed by the skill name. Arguments like URLs or file paths go after the skill name.
+
+### Claude Code
+
+```bash
+# Run the full pipeline on a domain
+/morphiq-scan https://www.example.com
+/morphiq-rank
+/morphiq-build
+/morphiq-track
+
+# Or run a single skill
+/morphiq-scan https://www.example.com
+```
+
+Each skill reads the previous skill's output automatically (`MORPHIQ-SCAN.json` → `MORPHIQ-RANK.json` → `MORPHIQ-BUILD.json` → `MORPHIQ-TRACK.json`).
+
+### GitHub Copilot (VS Code)
+
+Skills are available in agent mode. Reference the skill name in your prompt:
+
+```
+@workspace Use Morphiq Scan to audit https://www.example.com
+```
+
+### Cursor / Windsurf / Other Agents
+
+After installing with `npx skills add`, reference the skill by name or description in your prompt. Most agents will auto-match when you mention scanning, auditing, or AI visibility.
+
+### What Each Command Does
+
+| Command | Input | Output |
+|---------|-------|--------|
+| `/morphiq-scan <url>` | A domain URL | `MORPHIQ-SCAN.json` |
+| `/morphiq-rank` | `MORPHIQ-SCAN.json` (auto-read) | `MORPHIQ-RANK.json` |
+| `/morphiq-build` | `MORPHIQ-RANK.json` (auto-read) | `MORPHIQ-BUILD.json` + artifacts |
+| `/morphiq-track` | `MORPHIQ-BUILD.json` (auto-read) | `MORPHIQ-TRACK.json` + `MORPHIQ-TRACKER.md` |
+
+> **Tip:** In Claude Code, type `/` and start typing `morphiq` to see all available skills in autocomplete.
+
 ## How It Works
 
 The four skills form a continuous loop — not a one-shot audit:
