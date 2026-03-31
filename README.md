@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.png" alt="Morphiq Skills Banner" width="100%" />
+</p>
+
 # Morphiq Skills
 
 AI visibility that maintains itself — audit, prioritize, fix, measure, repeat.
