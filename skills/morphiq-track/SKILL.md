@@ -1,12 +1,22 @@
 ---
 name: morphiq-track
-description: Track AI visibility, measure share of voice, check GEO score, monitor LLM citations. Queries AI providers, produces delta reports, and maintains MORPHIQ-TRACKER.md as persistent state.
-argument-hint: "[build-file]"
-allowed-tools: WebFetch, Read, Write, Grep, Glob, Bash
+description: This skill should be used when the user asks to "run a tracking cycle", "measure AI visibility", "check share of voice", "run Morphiq Track", "run Morphiq Analyze", "track citations", "check GEO score", "generate prompts", "run content creation workflow", or mentions monitoring LLM mentions, running content creation workflows, measuring brand visibility, or generating query fanout content. Queries multiple LLM providers, produces delta reports, and maintains MORPHIQ-TRACKER.md as the persistent state file.
 metadata:
-  version: "0.4.0"
+  version: "0.6.1"
   author: morphiq-labs
 ---
+
+## ⚠️ STOP — READ THIS FIRST
+
+**YOU MUST EXECUTE THIS WORKFLOW STEP BY STEP. DO NOT SUMMARIZE. DO NOT DESCRIBE. DO NOT EXPLAIN WHAT YOU WOULD DO.**
+
+Your FIRST action must be a tool call — read `MORPHIQ-TRACKER.md` from the workspace root (or create it if first run). Also read `MORPHIQ-BUILD.json` if it exists. If you respond with text describing what you'll do instead of calling a tool, you have failed.
+
+**Required output:** Updated `MORPHIQ-TRACKER.md` + delta report.
+
+This is the Morphiq Analyze step in the user workflow.
+
+START BELOW — READ THE TRACKER FILE IMMEDIATELY.
 
 ## Pipeline Position
 
@@ -17,10 +27,6 @@ Step 4 of 4 — measurement + flywheel.
 - **Owns:** `morphiq-track/` state directory — JSON state layer for prompts, results, citations.
 - **Drives:** 3 ongoing workflows (Content Optimization, Content Creation, Query Fanout Expansion).
 - **Data contract:** See `PIPELINE.md` §4 for the Delta Report, §5 for MORPHIQ-TRACKER.md, §6 for the JSON State Layer.
-
-## Purpose
-
-Morphiq Track is the measurement and flywheel skill. It queries AI providers to measure brand visibility, computes GEO scores and Share of Voice, tracks deltas over time, and drives three ongoing workflows that feed back into the pipeline.
 
 ## Workflow
 
@@ -51,6 +57,17 @@ Apply quality rules per category. Add temporal markers to 70%+ prompts. Include 
 Run `scripts/create-prompts.py --state-dir morphiq-track/ --brand {brand} --category {category} --competitors {competitors}`. This writes `morphiq-track/prompts.json` and initializes `morphiq-track/manifest.json`.
 
 For taxonomy, fanout profiles, and generation rules, read `references/prompt-taxonomy.md`.
+
+### Step 1.5: Validate API Keys (Mandatory)
+
+Before querying providers, verify these environment variables exist:
+
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+- `PERPLEXITY_API_KEY`
+- `GEMINI_API_KEY`
+
+If any required key is missing, stop and ask the user to provide it before continuing.
 
 ### Step 2: Query AI Providers
 

@@ -31,6 +31,17 @@ npx skills add morphiqlabs/morphiq-labs-skills --list
 
 After installing, invoke skills with `/` followed by the skill name. Arguments like URLs or file paths go after the skill name.
 
+### Recommended Workflow (User Prompts)
+
+Use this exact sequence in chat:
+
+1. `Run Morphiq Scan on https://www.example.com`
+2. `Now based on all Morphiq Scan analysis, run Morphiq Rank`
+3. `Now run Morphiq Build to fix those issues`
+4. `Now run Morphiq Analyze (Morphiq Track) to generate prompts, run providers, capture sources, and update the tracker`
+
+Step 4 requires API keys. See `API Keys (morphiq-track)` below.
+
 ### Claude Code
 
 ```bash
@@ -38,7 +49,7 @@ After installing, invoke skills with `/` followed by the skill name. Arguments l
 /morphiq-scan https://www.example.com
 /morphiq-rank
 /morphiq-build
-/morphiq-track
+/morphiq-track   # Morphiq Analyze step
 
 # Or run a single skill
 /morphiq-scan https://www.example.com
@@ -52,6 +63,9 @@ Skills are available in agent mode. Reference the skill name in your prompt:
 
 ```
 @workspace Use Morphiq Scan to audit https://www.example.com
+@workspace Now based on all Morphiq Scan analysis, run Morphiq Rank
+@workspace Now run Morphiq Build to fix those issues
+@workspace Now run Morphiq Analyze (Morphiq Track) and update MORPHIQ-TRACKER.md
 ```
 
 ### Cursor / Windsurf / Other Agents
@@ -65,7 +79,7 @@ After installing with `npx skills add`, reference the skill by name or descripti
 | `/morphiq-scan <url>` | A domain URL | `MORPHIQ-SCAN.json` |
 | `/morphiq-rank` | `MORPHIQ-SCAN.json` (auto-read) | `MORPHIQ-RANK.json` |
 | `/morphiq-build` | `MORPHIQ-RANK.json` (auto-read) | `MORPHIQ-BUILD.json` + artifacts |
-| `/morphiq-track` | `MORPHIQ-BUILD.json` (auto-read) | `MORPHIQ-TRACK.json` + `MORPHIQ-TRACKER.md` |
+| `/morphiq-track` (Analyze) | `MORPHIQ-BUILD.json` (auto-read) + provider API keys | Delta report JSON + updated `MORPHIQ-TRACKER.md` |
 
 > **Tip:** In Claude Code, type `/` and start typing `morphiq` to see all available skills in autocomplete.
 
@@ -135,10 +149,14 @@ Also handles: JSON-LD injection, llms.txt generation, metadata optimization, FAQ
 
 **Output:** Build Artifacts (JSON) -> morphiq-track
 
-### morphiq-track — Monitor
+### morphiq-track — Analyze & Monitor
 
 Measures AI visibility across providers and drives the feedback loop.
 
+- Generates prompt sets from website/build context
+- Runs provider queries using user API keys
+- Captures full responses, sources, citations, and sub-queries
+- Produces inputs for content correction and content creation workflows
 - Generates 50 prompts across 5 GEO categories (organic, competitor, how-to, brand, FAQ)
 - Queries OpenAI, Gemini, Perplexity, and Anthropic APIs
 - Computes Share of Voice, citation rates, and brand positioning
@@ -168,6 +186,8 @@ ANTHROPIC_API_KEY     # Claude tool use pattern
 PERPLEXITY_API_KEY    # Native search behavior
 GEMINI_API_KEY        # Grounding with URL resolution
 ```
+
+Without these keys, the analyze/track run cannot execute provider queries.
 
 ## Project Structure
 

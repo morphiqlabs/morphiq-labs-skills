@@ -1,12 +1,20 @@
 ---
 name: morphiq-build
-description: Fix AI visibility issues, generate schema markup, create llms.txt, optimize content for LLM citations. Consumes MORPHIQ-RANK.json and produces build artifacts through a 6-step content lab.
-argument-hint: "[roadmap-file]"
-allowed-tools: WebFetch, Read, Write, Grep, Glob, Bash
+description: This skill should be used when the user asks to "fix the issues", "optimize existing content", "create new content for AI visibility", "run Morphiq Build", "generate schema markup", "create an llms.txt file", "run the content lab", or mentions building content fixes, generating schema, rewriting content for AI citations, or creating policy files. Consumes a Prioritized Roadmap and produces build artifacts through a 6-step content lab pipeline.
 metadata:
-  version: "0.4.0"
+  version: "0.6.1"
   author: morphiq-labs
 ---
+
+## ⚠️ STOP — READ THIS FIRST
+
+**YOU MUST EXECUTE THIS WORKFLOW STEP BY STEP. DO NOT SUMMARIZE. DO NOT DESCRIBE. DO NOT EXPLAIN WHAT YOU WOULD DO.**
+
+Your FIRST action must be a tool call — read `MORPHIQ-RANK.json` from the workspace root RIGHT NOW. If that file doesn't exist, check for user prompt or existing content. If you respond with text describing what you'll do instead of calling a tool, you have failed.
+
+**Required output file:** `MORPHIQ-BUILD.json` (exactly this filename) in the workspace root + content artifact files.
+
+START BELOW — READ THE RANK FILE IMMEDIATELY.
 
 ## Pipeline Position
 
@@ -14,10 +22,6 @@ Step 3 of 4 — consumes morphiq-rank output.
 - **Input:** Prioritized Roadmap (JSON) OR user prompt OR existing content.
 - **Output:** Build Output (JSON + artifacts) → consumed by morphiq-track.
 - **Data contract:** See `PIPELINE.md` §3 for the Build Output schema.
-
-## Purpose
-
-Morphiq Build fixes issues from morphiq-rank. It creates new content, optimizes existing content, generates schema markup, builds policy files, and produces artifacts to improve AI visibility. The core engine is a 6-step content lab pipeline.
 
 ## Entry Points
 

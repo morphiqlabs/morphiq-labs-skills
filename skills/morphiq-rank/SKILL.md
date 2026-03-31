@@ -1,19 +1,37 @@
 ---
 name: morphiq-rank
-description: Create issues from a scan report, prioritize what to fix, rank by impact. Consumes MORPHIQ-SCAN.json and produces a tiered roadmap with weighted priority scores.
-argument-hint: "[scan-file]"
-allowed-tools: Read, Write, Grep, Glob
+description: This skill should be used when the user asks to "create issues from a scan", "prioritize what to fix", "rank the issues", "build a roadmap from scan results", "run Morphiq Rank", or mentions creating a prioritized roadmap from scan results. Consumes MORPHIQ-SCAN.json, applies issue creation criteria with impact/effort weighting, and organizes issues into 4 progressive discovery tiers.
 metadata:
-  version: "0.4.0"
+  version: "0.6.1"
   author: morphiq-labs
 ---
 
-## EXECUTION INSTRUCTIONS
+## ⚠️ STOP — READ THIS FIRST
 
-You are now executing Morphiq Rank. This is a WORKFLOW — you must read the Scan Report, create issues, compute priority scores, and produce a Prioritized Roadmap. Do NOT just describe what the skill does. EXECUTE the steps.
+**YOU MUST EXECUTE THIS WORKFLOW STEP BY STEP. DO NOT SUMMARIZE. DO NOT DESCRIBE. DO NOT EXPLAIN WHAT YOU WOULD DO.**
 
-**Input:** Read **`MORPHIQ-SCAN.json`** from the workspace root (produced by morphiq-scan). If that file doesn't exist, also try `MORPHIQ_SCAN_REPORT.json` (legacy name). If the scan just ran in this session, use the scan results from context.
-**Output:** You MUST write a Prioritized Roadmap JSON file to **`MORPHIQ-RANK.json`** (exactly this filename, with hyphens not underscores) in the workspace root AND display a human-readable summary.
+Your FIRST action must be a tool call — read `MORPHIQ-SCAN.json` from the workspace root RIGHT NOW. If you respond with text describing what you'll do instead of calling a tool, you have failed.
+
+**Input file:** `MORPHIQ-SCAN.json` (or `MORPHIQ_SCAN_REPORT.json` legacy name). If the scan just ran in this session, use the scan results from context.
+**Required output file:** `MORPHIQ-RANK.json` (exactly this filename) in the workspace root.
+
+START WITH STEP 1 BELOW — READ THE SCAN FILE IMMEDIATELY.
+
+### Input Normalization
+
+The scan JSON may use non-standard key names. Before processing, map these aliases to the correct keys:
+
+| Expected Key | Possible Aliases |
+|---|---|
+| `scores` | `category_scores`, `scoring_breakdown`, `overall_score_breakdown`, `score_breakdown` |
+| `pages` | `pages_analyzed`, `pages_audited`, `page_results` |
+| `policy_files` | `policies`, `policy` |
+| `query_fanout` | `fanout`, `query_coverage` |
+| `overall_score` | `total_score`, `score`, `aggregate_score` |
+
+For issues: `id` may appear as `issue_id`; `remediation_hint` may appear as `remediation`, `fix`, or `recommendation`.
+
+If the scan ran in this session and the JSON file has structural issues, prefer the in-context scan results over the file. You can also run `python scripts/normalize-scan.py MORPHIQ-SCAN.json` if the normalizer script is available in the workspace.
 
 ### HARD RULES — VALIDATE BEFORE WRITING OUTPUT
 
