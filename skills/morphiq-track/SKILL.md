@@ -58,20 +58,31 @@ Run `scripts/create-prompts.py --state-dir morphiq-track/ --brand {brand} --cate
 
 For taxonomy, fanout profiles, and generation rules, read `references/prompt-taxonomy.md`.
 
-### Step 1.5: Validate API Keys (Mandatory)
+### Step 1.5: Validate API Keys — HARD GATE
 
-Before querying providers, verify these environment variables exist:
+Before querying providers, check for these environment variables:
 
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
 - `PERPLEXITY_API_KEY`
 - `GEMINI_API_KEY`
 
-If any required key is missing, stop and ask the user to provide it before continuing.
+**If any key is missing, STOP COMPLETELY and output this message (replacing the bracketed parts):**
+
+> API keys required to run Morphiq Analyze. Missing: [list missing keys].
+> Please set these environment variables and re-run:
+> - OPENAI_API_KEY — from https://platform.openai.com/api-keys
+> - ANTHROPIC_API_KEY — from https://console.anthropic.com/settings/keys
+> - PERPLEXITY_API_KEY — from https://www.perplexity.ai/settings/api
+> - GEMINI_API_KEY — from https://aistudio.google.com/app/apikey
+
+**Do NOT proceed past this step without real keys. Do NOT simulate, estimate, or fabricate provider responses. Do NOT write placeholder data to any file. The tracking data must reflect real LLM behavior or it is worthless.**
 
 ### Step 2: Query AI Providers
 
 Distribute prompts evenly across 4 providers. Execute using `scripts/run-queries.py --state-dir morphiq-track/ --mode execute`. This reads prompts from `morphiq-track/prompts.json`, writes versioned results to `morphiq-track/results/track-{date}.json`, and updates `morphiq-track/manifest.json`.
+
+**DO NOT write a pipeline.js, pipeline.py, or any wrapper script to execute this step. DO NOT create any new script files. Use the existing scripts in `scripts/` directly, or call the provider APIs via your built-in web/fetch tools. If a script fails, debug it — do not rewrite it.**
 
 | Provider | Model | Concurrency |
 |---|---|---|
