@@ -1,12 +1,10 @@
 # Morphiq Skills — Build Progress
 
-Last updated: 2026-03-26
+Last updated: 2025-07-16
 
 ## Legend
 - [x] Done
 - [ ] Not started
-- [~] Placeholder only (needs real content)
-- [!] Blocked — needs Mudra-specific data from trymudra.com extraction
 
 ---
 
@@ -15,9 +13,9 @@ Last updated: 2026-03-26
 | File | Status |
 |------|--------|
 | PIPELINE.md | [x] Done — 5-category scoring, all 4 data contracts |
-| README.md | [ ] Not started (write last) |
-| CHANGELOG.md | [ ] Not started (write last) |
-| LICENSE | [ ] Not started (Apache-2.0) |
+| README.md | [x] Done — install, usage, skill descriptions |
+| AGENTS.md | [x] Done — cross-agent discoverability |
+| LICENSE | [x] Done — Apache-2.0 |
 | PROGRESS.md | [x] This file |
 
 ---
@@ -27,31 +25,32 @@ Last updated: 2026-03-26
 ### SKILL.md
 | File | Status |
 |------|--------|
-| SKILL.md | [~] Frontmatter + pipeline position done — needs workflow instructions |
+| SKILL.md | [x] Full workflow instructions, 9 steps, frontmatter with license |
 
 ### references/
 
 | File | Status | Notes |
 |------|--------|-------|
-| agentic-readiness.md | [ ] | Full site readiness: schema types, structure, machine-readability |
-| scoring-rubric.md | [!] | 100-point scoring methodology — needs Mudra-specific data |
-| page-type-rules.md | [ ] | Page type detection + expected elements per type |
-| chunking-retrieval.md | [x] | Research-grounded (Anthropic, Google, HuggingFace, SEL citations) |
-| query-fanout.md | [ ] | Chain-of-thought sub-question framework |
-| content-quality.md | [x] | 5 quality pillars, E-E-A-T, citation format rules |
-| policy-files.md | [ ] | robots.txt + llms.txt detection + audit rules |
+| agentic-readiness.md | [x] | ~141 lines — full site readiness: schema types, structure, machine-readability |
+| scoring-rubric.md | [x] | ~240 lines — 100-point scoring methodology |
+| page-type-rules.md | [x] | ~130 lines — page type detection + expected elements per type |
+| chunking-retrieval.md | [x] | ~340 lines — research-grounded (Anthropic, Google, HuggingFace, SEL citations) |
+| query-fanout.md | [x] | ~290 lines — chain-of-thought sub-question framework |
+| content-quality.md | [x] | ~115 lines — 5 quality pillars, E-E-A-T, citation format rules |
+| policy-files.md | [x] | ~100 lines — robots.txt + llms.txt detection + audit rules |
 
 ### scripts/
 
 | File | Status |
 |------|--------|
-| extract-meta.sh | [ ] |
-| score-page.py | [ ] |
+| extract-meta.py | [x] |
+| score-page.py | [x] |
+| normalize-scan.py | [x] |
 
 ### evals/
 | Status |
 |--------|
-| [ ] Empty — needs README.md, fixtures, sample tests |
+| [ ] Not started |
 
 ---
 
@@ -60,19 +59,19 @@ Last updated: 2026-03-26
 ### SKILL.md
 | File | Status |
 |------|--------|
-| SKILL.md | [~] Frontmatter + pipeline position done — needs workflow instructions |
+| SKILL.md | [x] Full workflow instructions, 7 steps + reconciliation, frontmatter with license |
 
 ### references/
 
 | File | Status | Notes |
 |------|--------|-------|
-| issue-catalog.md | [!] | All issue types + severity — needs Mudra-specific data |
-| tier-progression.md | [!] | Progressive discovery tiers — needs Mudra-specific data |
+| issue-catalog.md | [x] | ~290 lines — all issue types + severity |
+| tier-progression.md | [x] | ~245 lines — progressive discovery tiers |
 
 ### evals/
 | Status |
 |--------|
-| [ ] Empty — needs README.md, fixtures, sample tests |
+| [ ] Not started (has .gitkeep) |
 
 ---
 
@@ -81,39 +80,41 @@ Last updated: 2026-03-26
 ### SKILL.md
 | File | Status |
 |------|--------|
-| SKILL.md | [~] Frontmatter + pipeline position done — needs workflow instructions |
+| SKILL.md | [x] Full workflow instructions, 7 steps (6-step content lab), frontmatter with license |
 
 ### references/
 
 | File | Status | Notes |
 |------|--------|-------|
-| content-lab-pipeline.md | [x] | 5-step workflow adapted for skills context |
-| schema-templates.md | [ ] | JSON-LD templates per page type |
-| metadata-patterns.md | [x] | Title, description, OG, TL;DR, author byline, brand positioning |
-| faq-guidelines.md | [x] | FAQ structure, question selection, brand positioning, anti-patterns |
-| llms-txt-spec.md | [x] | Full llms.txt format, generation process, robots.txt companion |
-| enrichment-sources.md | [x] | Name-drop + link citations, expert quotes, source authority tiers |
-| gap-taxonomy.md | [x] | 5 gap types with detection signals, severity guides, search queries |
+| content-lab-pipeline.md | [x] | ~350 lines — 5-step workflow adapted for skills context |
+| schema-templates.md | [x] | ~230 lines — JSON-LD templates per page type |
+| metadata-patterns.md | [x] | ~150 lines — title, description, OG, TL;DR, author byline, brand positioning |
+| faq-guidelines.md | [x] | ~120 lines — FAQ structure, question selection, brand positioning, anti-patterns |
+| llms-txt-spec.md | [x] | ~195 lines — full llms.txt format, generation process, robots.txt companion |
+| enrichment-sources.md | [x] | ~175 lines — name-drop + link citations, expert quotes, source authority tiers |
+| gap-taxonomy.md | [x] | ~150 lines — 5 gap types with detection signals, severity guides, search queries |
 
 ### scripts/
 
 | File | Status |
 |------|--------|
-| ingest-sources.py | [ ] |
-| extract-content.py | [ ] |
-| analyze-gaps.py | [ ] |
-| research-live.py | [ ] |
-| create-from-prompt.py | [ ] |
-| inject-schema.py | [ ] |
-| generate-llms-txt.sh | [ ] |
-| enrich-content.py | [ ] |
-| restructure-content.py | [ ] |
-| quality-rewrite.py | [ ] |
+| ingest-sources.py | [x] |
+| extract-content.py | [x] |
+| analyze-gaps.py | [x] |
+| research-live.py | [x] |
+| create-from-prompt.py | [x] |
+| inject-schema.py | [x] |
+| generate-llms-txt.py | [x] |
+| enrich-content.py | [x] |
+| restructure-content.py | [x] |
+| quality-rewrite.py | [x] |
+| validate-coverage.py | [x] |
+| test_generate_llms_txt.py | [x] |
 
 ### evals/
 | Status |
 |--------|
-| [ ] Empty — needs README.md, fixtures, sample tests |
+| [ ] Not started |
 
 ---
 
@@ -122,58 +123,52 @@ Last updated: 2026-03-26
 ### SKILL.md
 | File | Status |
 |------|--------|
-| SKILL.md | [~] Frontmatter + pipeline position done — needs workflow instructions |
+| SKILL.md | [x] Full workflow instructions, multi-step with 3 content workflows, frontmatter with license |
 
 ### references/
 
 | File | Status | Notes |
 |------|--------|-------|
-| tracker-spec.md | [x] | Full MORPHIQ-TRACKER.md spec — 14 sections, KPI definitions, update rules per skill |
-| prompt-taxonomy.md | [ ] | Brand, category, comparison, feature prompt types |
-| query-targets.md | [ ] | Which AI systems to query + when to use each |
-| provider-strategies.md | [ ] | OpenAI, Gemini, Perplexity, Anthropic — API keys + data shapes |
-| delta-scoring.md | [ ] | Citations gained/lost, mention shift measurement |
-| share-of-voice.md | [ ] | (Mentions/Total) × 100 + competitive tracking over time |
+| tracker-spec.md | [x] | ~460 lines — full MORPHIQ-TRACKER.md spec, 14 sections, KPI definitions |
+| prompt-taxonomy.md | [x] | ~300 lines — brand, category, comparison, feature prompt types |
+| query-targets.md | [x] | ~210 lines — which AI systems to query + when to use each |
+| provider-strategies.md | [x] | ~260 lines — OpenAI, Gemini, Perplexity, Anthropic — API keys + data shapes |
+| delta-scoring.md | [x] | ~145 lines — citations gained/lost, mention shift measurement |
+| share-of-voice.md | [x] | ~250 lines — (Mentions/Total) × 100 + competitive tracking over time |
+| state-layer.md | [x] | ~370 lines — JSON state management, migration, manifest spec |
 
 ### scripts/
 
 | File | Status |
 |------|--------|
-| create-prompts.py | [ ] |
-| run-queries.py | [ ] |
-| diff-results.py | [ ] |
-| generate-report.py | [ ] |
+| create-prompts.py | [x] |
+| run-queries.py | [x] |
+| diff-results.py | [x] |
+| analyze-fanout.py | [x] |
+| generate-report.py | [x] |
 
 ### evals/
 | Status |
 |--------|
-| [ ] Empty — needs README.md, fixtures, sample tests |
+| [ ] Not started |
 
 ---
 
 ## Summary
 
-| Category | Done | Placeholder | Blocked | Not Started | Total |
-|----------|------|-------------|---------|-------------|-------|
-| Root files | 2 | 0 | 0 | 3 | 5 |
-| SKILL.md files | 0 | 4 | 0 | 0 | 4 |
-| Reference files | 9 | 0 | 3 | 9 | 21 |
-| Scripts | 0 | 0 | 0 | 16 | 16 |
-| Evals | 0 | 0 | 0 | 4 | 4 |
-| **Total** | **11** | **4** | **3** | **32** | **50** |
+| Category | Done | Not Started | Total |
+|----------|------|-------------|-------|
+| Root files | 5 | 0 | 5 |
+| SKILL.md files | 4 | 0 | 4 |
+| Reference files | 23 | 0 | 23 |
+| Scripts | 20 | 0 | 20 |
+| Evals | 0 | 4 | 4 |
+| **Total** | **52** | **4** | **56** |
 
-## Blockers
+## Remaining Work
 
-3 reference files need Mudra-specific data from trymudra.com extraction:
-1. `morphiq-scan/references/scoring-rubric.md` — 100-point scoring methodology
-2. `morphiq-rank/references/issue-catalog.md` — All issue types + severity
-3. `morphiq-rank/references/tier-progression.md` — Progressive discovery tiers
-
-## Build Order (per spec)
-
-1. ~~PIPELINE.md~~ ✓
-2. morphiq-scan ← **next**
-3. morphiq-rank
-4. morphiq-build
-5. morphiq-track
-6. README.md + CHANGELOG.md (last)
+4 eval suites need creation:
+1. `morphiq-scan/evals/` — scan trigger + output validation
+2. `morphiq-rank/evals/` — rank trigger + tier assignment validation
+3. `morphiq-build/evals/` — build trigger + artifact generation validation
+4. `morphiq-track/evals/` — track trigger + provider query validation

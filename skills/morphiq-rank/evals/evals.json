@@ -1,0 +1,56 @@
+[
+  {
+    "id": "rank-trigger-from-scan",
+    "prompt": "Run Morphiq Rank from the scan",
+    "expected": {
+      "skill_invoked": "morphiq-rank",
+      "requires_file": "MORPHIQ-SCAN.json",
+      "output_file": "MORPHIQ-RANK.json",
+      "output_contains": ["issues", "tiers", "summary"],
+      "does_not_chain": ["morphiq-build", "morphiq-track"]
+    }
+  },
+  {
+    "id": "rank-trigger-prioritize",
+    "prompt": "Prioritize what to fix from the scan results",
+    "expected": {
+      "skill_invoked": "morphiq-rank",
+      "requires_file": "MORPHIQ-SCAN.json"
+    }
+  },
+  {
+    "id": "rank-trigger-roadmap",
+    "prompt": "Build a roadmap from scan results",
+    "expected": {
+      "skill_invoked": "morphiq-rank"
+    }
+  },
+  {
+    "id": "rank-four-tiers",
+    "prompt": "Create issues from the scan",
+    "expected": {
+      "skill_invoked": "morphiq-rank",
+      "tiers_present": ["tier_1", "tier_2", "tier_3", "tier_4"],
+      "issues_have": ["id", "title", "severity", "effort", "tier"]
+    }
+  },
+  {
+    "id": "rank-handoff-message",
+    "prompt": "Rank the issues",
+    "expected": {
+      "skill_invoked": "morphiq-rank",
+      "completion_message_contains": "Morphiq Build"
+    }
+  },
+  {
+    "id": "rank-missing-input",
+    "prompt": "Run Morphiq Rank",
+    "preconditions": {
+      "MORPHIQ-SCAN.json": "missing"
+    },
+    "expected": {
+      "skill_invoked": "morphiq-rank",
+      "error_message_contains": "MORPHIQ-SCAN.json"
+    }
+  }
+]

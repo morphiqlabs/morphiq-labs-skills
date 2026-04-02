@@ -17,8 +17,8 @@ Modes:
   execute — Run all queries against live provider APIs and save versioned results.
   results — Aggregate previously-saved results and compute citation diffs.
 
-Required env vars for execute mode:
-  OPENAI_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, ANTHROPIC_API_KEY
+Execute mode uses any available provider API keys and skips missing providers with a warning.
+If no provider keys are configured, the run exits without querying.
 
 With --state-dir:
   Reads prompts from {state-dir}/prompts.json
@@ -63,16 +63,35 @@ PROVIDERS = {
     },
 }
 
+PROVIDER_API_KEYS = {
+    "openai": "OPENAI_API_KEY",
+    "perplexity": "PERPLEXITY_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+}
+
 
 # ── Utility helpers ──────────────────────────────────────────────────────────
 
-def require_env(name):
-    """Read a required environment variable or exit."""
-    val = os.environ.get(name)
-    if not val:
-        print(f"ERROR: missing required environment variable {name}", file=sys.stderr)
-        sys.exit(1)
-    return val
+def get_env(name):
+    """Read an environment variable."""
+    return os.environ.get(name)
+
+
+def resolve_active_providers(requested_providers=None):
+    """Return providers with configured API keys plus any missing providers."""
+    requested = requested_providers or list(PROVIDERS.keys())
+    active = []
+    missing = []
+
+    for provider in requested:
+        env_name = PROVIDER_API_KEYS.get(provider)
+        if env_name and get_env(env_name):
+            active.append(provider)
+        else:
+            missing.append((provider, env_name))
+
+    return active, missing
 
 
 def strip_utm_params(url):
@@ -141,7 +160,10 @@ def query_openai(prompt_text, prompt_id):
     """Query OpenAI with web search. Extracts sub-queries from web_search_call items."""
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=require_env("OPENAI_API_KEY"))
+        api_key = get_env("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("missing environment variable OPENAI_API_KEY")
+        client = OpenAI(api_key=api_key)
         response = client.responses.create(
             model=PROVIDERS["openai"]["model"],
             tools=[{"type": "web_search", "search_context_size": "high"}],
@@ -174,7 +196,10 @@ def query_perplexity(prompt_text, prompt_id):
     """Query Perplexity Sonar Pro. Extracts Perplexity-specific citations."""
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=require_env("PERPLEXITY_API_KEY"), base_url="https://api.perplexity.ai")
+        api_key = get_env("PERPLEXITY_API_KEY")
+        if not api_key:
+            raise RuntimeError("missing environment variable PERPLEXITY_API_KEY")
+        client = OpenAI(api_key=api_key, base_url="https://api.perplexity.ai")
         response = client.chat.completions.create(
             model=PROVIDERS["perplexity"]["model"],
             messages=[{"role": "user", "content": prompt_text}],
@@ -219,7 +244,10 @@ def query_gemini(prompt_text, prompt_id):
     try:
         from google import genai
         from google.genai import types
-        client = genai.Client(api_key=require_env("GEMINI_API_KEY"))
+        api_key = get_env("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError("missing environment variable GEMINI_API_KEY")
+        client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
             model=PROVIDERS["gemini"]["model"],
             contents=prompt_text,
@@ -250,7 +278,10 @@ def query_anthropic(prompt_text, prompt_id):
     """Query Anthropic Claude with web search. Model fallback chain."""
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=require_env("ANTHROPIC_API_KEY"))
+        api_key = get_env("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError("missing environment variable ANTHROPIC_API_KEY")
+        client = anthropic.Anthropic(api_key=api_key)
 
         models = [PROVIDERS["anthropic"]["model"]] + PROVIDERS["anthropic"].get("fallback_models", [])
         response = None
@@ -455,14 +486,14 @@ def diff_citations(current_citations, previous_citations):
 
 # ── Execute mode ─────────────────────────────────────────────────────────────
 
-def execute_queries(prompts, config):
+def execute_queries(prompts, config, provider_names=None):
     """Execute all queries against live provider APIs."""
     brand = config["brand"]
     domain = config["domain"]
     competitors = config.get("competitors", [])
     output_path = config.get("output_path", "morphiq-track-results.json")
 
-    providers = list(PROVIDERS.keys())
+    providers = provider_names or list(PROVIDERS.keys())
     query_funcs = {
         "openai": query_openai,
         "perplexity": query_perplexity,
@@ -649,6 +680,25 @@ def main():
             print("ERROR: prompts file must have config.brand and config.domain", file=sys.stderr)
             sys.exit(1)
 
+        requested_providers = providers_filter or list(PROVIDERS.keys())
+        active_providers, missing_providers = resolve_active_providers(requested_providers)
+
+        if missing_providers:
+            missing_labels = []
+            for provider, env_name in missing_providers:
+                if env_name:
+                    missing_labels.append(f"{provider} ({env_name})")
+                else:
+                    missing_labels.append(provider)
+            print(
+                "WARNING: skipping providers without API keys: " + ", ".join(missing_labels),
+                file=sys.stderr,
+            )
+
+        if not active_providers:
+            print("WARNING: no provider API keys are configured; nothing to execute.", file=sys.stderr)
+            return
+
         # Resolve output path
         if args.state_dir:
             output_path, run_id = resolve_results_path(args.state_dir)
@@ -657,7 +707,7 @@ def main():
         else:
             config.setdefault("output_path", "morphiq-track-results.json")
 
-        _, output_data = execute_queries(prompts, config)
+        _, output_data = execute_queries(prompts, config, provider_names=active_providers)
 
         # Update manifest if using state-dir
         if args.state_dir:

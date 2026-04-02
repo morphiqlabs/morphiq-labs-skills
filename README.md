@@ -37,14 +37,29 @@ After installing, invoke skills with `/` followed by the skill name. Arguments l
 
 ### Recommended Workflow (User Prompts)
 
-Use this exact sequence in chat:
+Send each command as a **separate message** and wait for the output file to appear before sending the next. Do not ask to "run the full pipeline" in one message.
 
-1. `Run Morphiq Scan on https://www.example.com`
-2. `Now based on all Morphiq Scan analysis, run Morphiq Rank`
-3. `Now run Morphiq Build to fix those issues`
-4. `Now run Morphiq Analyze (Morphiq Track) to generate prompts, run providers, capture sources, and update the tracker`
+**Message 1** → wait for `MORPHIQ-SCAN.json`:
+```
+Run Morphiq Scan on https://www.example.com
+```
 
-Step 4 requires API keys. See `API Keys (morphiq-track)` below.
+**Message 2** → wait for `MORPHIQ-RANK.json`:
+```
+Run Morphiq Rank
+```
+
+**Message 3** → wait for `MORPHIQ-BUILD.json`:
+```
+Run Morphiq Build
+```
+
+**Message 4** → wait for `MORPHIQ-TRACKER.md` (requires API keys):
+```
+Run Morphiq Analyze
+```
+
+Step 4 requires API keys set in your environment. See `API Keys (morphiq-track)` below.
 
 ### Claude Code
 
@@ -158,7 +173,7 @@ Also handles: JSON-LD injection, llms.txt generation, metadata optimization, FAQ
 Measures AI visibility across providers and drives the feedback loop.
 
 - Generates prompt sets from website/build context
-- Runs provider queries using user API keys
+- Runs provider queries using any configured provider API keys; missing providers are skipped with a warning
 - Captures full responses, sources, citations, and sub-queries
 - Produces inputs for content correction and content creation workflows
 - Generates 50 prompts across 5 GEO categories (organic, competitor, how-to, brand, FAQ)
@@ -182,7 +197,7 @@ Measures AI visibility across providers and drives the feedback loop.
 
 ## API Keys (morphiq-track)
 
-morphiq-track queries AI providers directly. Set these environment variables:
+morphiq-track queries AI providers directly. Set these environment variables for the providers you want to use:
 
 ```
 OPENAI_API_KEY        # GPT web_search tool
@@ -191,7 +206,8 @@ PERPLEXITY_API_KEY    # Native search behavior
 GEMINI_API_KEY        # Grounding with URL resolution
 ```
 
-Without these keys, the analyze/track run cannot execute provider queries.
+If one or more keys are missing, morphiq-track will warn and use the providers that are configured.
+If none are set, it will warn and exit without querying providers.
 
 ## Project Structure
 

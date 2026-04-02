@@ -1,0 +1,58 @@
+[
+  {
+    "id": "build-trigger-fix",
+    "prompt": "Fix the issues from the roadmap",
+    "expected": {
+      "skill_invoked": "morphiq-build",
+      "requires_file": "MORPHIQ-RANK.json",
+      "output_file": "MORPHIQ-BUILD.json",
+      "output_contains": ["artifacts", "issues_addressed"],
+      "does_not_chain": ["morphiq-track"]
+    }
+  },
+  {
+    "id": "build-trigger-content",
+    "prompt": "Create new content for AI visibility",
+    "expected": {
+      "skill_invoked": "morphiq-build"
+    }
+  },
+  {
+    "id": "build-trigger-schema",
+    "prompt": "Generate schema markup for the issues",
+    "expected": {
+      "skill_invoked": "morphiq-build"
+    }
+  },
+  {
+    "id": "build-trigger-llms-txt",
+    "prompt": "Create an llms.txt file",
+    "expected": {
+      "skill_invoked": "morphiq-build"
+    }
+  },
+  {
+    "id": "build-trigger-content-lab",
+    "prompt": "Run the content lab",
+    "expected": {
+      "skill_invoked": "morphiq-build"
+    }
+  },
+  {
+    "id": "build-six-step-pipeline",
+    "prompt": "Run Morphiq Build to fix the issues",
+    "expected": {
+      "skill_invoked": "morphiq-build",
+      "steps_executed": ["ingest", "extract", "analyze_gaps", "research", "create_content", "validate"],
+      "artifacts_generated": true
+    }
+  },
+  {
+    "id": "build-handoff-message",
+    "prompt": "Run Morphiq Build",
+    "expected": {
+      "skill_invoked": "morphiq-build",
+      "completion_message_contains": "Morphiq Analyze"
+    }
+  }
+]

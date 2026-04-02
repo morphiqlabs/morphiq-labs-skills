@@ -1,250 +1,88 @@
 ---
 name: morphiq-rank
-description: This skill should be used when the user asks to "create issues from a scan", "prioritize what to fix", "rank the issues", "build a roadmap from scan results", "run Morphiq Rank", or mentions creating a prioritized roadmap from scan results. Consumes MORPHIQ-SCAN.json, applies issue creation criteria with impact/effort weighting, and organizes issues into 4 progressive discovery tiers.
+description: >-
+  Consumes MORPHIQ-SCAN.json and produces a prioritized roadmap of issues organized into 4 progressive
+  discovery tiers, ranked by AI visibility impact and effort. Use when the user asks to "create issues
+  from a scan", "prioritize what to fix", "rank the issues", "build a roadmap from scan results",
+  "run Morphiq Rank", or mentions creating a prioritized roadmap from scan results.
+license: Apache-2.0
 metadata:
-  version: "0.6.1"
+  version: "0.7.1"
   author: morphiq-labs
 ---
 
-## ⚠️ STOP — READ THIS FIRST
+This skill runs one step only. Do not chain to morphiq-build or morphiq-track.
 
-**YOU MUST EXECUTE THIS WORKFLOW STEP BY STEP. DO NOT SUMMARIZE. DO NOT DESCRIBE. DO NOT EXPLAIN WHAT YOU WOULD DO.**
+Read `MORPHIQ-SCAN.json` from the workspace root now. If the file does not exist, stop and tell the user to run Morphiq Scan first.
 
-Your FIRST action must be a tool call — read `MORPHIQ-SCAN.json` from the workspace root RIGHT NOW. If you respond with text describing what you'll do instead of calling a tool, you have failed.
+Read `references/output-contract.md` before writing any output — it defines the exact JSON structure, field names, and validation rules for `MORPHIQ-RANK.json`.
 
-**Input file:** `MORPHIQ-SCAN.json` (or `MORPHIQ_SCAN_REPORT.json` legacy name). If the scan just ran in this session, use the scan results from context.
-**Required output file:** `MORPHIQ-RANK.json` (exactly this filename) in the workspace root.
+## Step 1: Normalize input
 
-START WITH STEP 1 BELOW — READ THE SCAN FILE IMMEDIATELY.
+The scan JSON may use non-standard key names. Read the input normalization table in `references/output-contract.md` and map any aliases before processing.
 
-### Input Normalization
+## Step 2: Create issues
 
-The scan JSON may use non-standard key names. Before processing, map these aliases to the correct keys:
+Read `references/issue-catalog.md` before creating issues — it defines all valid issue IDs, severity logic, and deduplication rules. Every `issue_id` must come from this catalog. Do not invent IDs.
 
-| Expected Key | Possible Aliases |
-|---|---|
-| `scores` | `category_scores`, `scoring_breakdown`, `overall_score_breakdown`, `score_breakdown` |
-| `pages` | `pages_analyzed`, `pages_audited`, `page_results` |
-| `policy_files` | `policies`, `policy` |
-| `query_fanout` | `fanout`, `query_coverage` |
-| `overall_score` | `total_score`, `score`, `aggregate_score` |
+For each scan finding, create a formal issue with: `issue_id`, `category`, `severity`, `summary`, `remediation`, `affected_urls`, `page_type`.
 
-For issues: `id` may appear as `issue_id`; `remediation_hint` may appear as `remediation`, `fix`, or `recommendation`.
+For `fanout-*` issues, populate `fanout_context` from the scan's `query_fanout.simulated_queries[]` and `suggested_content[]`. Map `model` → `model_origin`.
 
-If the scan ran in this session and the JSON file has structural issues, prefer the in-context scan results over the file. You can also run `python scripts/normalize-scan.py MORPHIQ-SCAN.json` if the normalizer script is available in the workspace.
+A site scoring ~60/100 typically has 15–25 issues. Fewer than 10 means something was missed — re-check every issue type against the scan data.
 
-### HARD RULES — VALIDATE BEFORE WRITING OUTPUT
+## Step 3: Assign tiers
 
-1. **Output filename:** `MORPHIQ-RANK.json` — NOT `MORPHIQ_ROADMAP.json`, NOT `morphiq-rank.json`, NOT any other variation.
-2. **Issue IDs are a closed set.** You MUST only use IDs from `references/issue-catalog.md`. Do NOT invent descriptive IDs. Wrong: `policy-llms-txt-missing`, `agentic-readiness-thin-schema`, `content-quality-thin-body-copy`. Correct: `policy-no-llms-txt`, `agentic-missing-product-schema`, `content-thin-page`. Before writing the JSON, validate every `issue_id` against the catalog.
-3. **Field names are exact.** Use `issue_id` not `id`. Use `impact_score` not `priority_score`. Use `remediation` not `remediation_hint`. See the JSON template in Step 7.
+Read `references/tier-progression.md` before assigning tiers — it defines the 4-tier model, dependency logic, and edge cases.
 
-## Pipeline Position
-
-Step 2 of 4 — consumes morphiq-scan output.
-- **Input:** Scan Report (JSON) from morphiq-scan — either `MORPHIQ-SCAN.json` or in-context results.
-- **Output:** Prioritized Roadmap JSON file (`MORPHIQ-RANK.json`) → consumed by morphiq-build.
-- **Data contract:** See `PIPELINE.md` §2 for the Prioritized Roadmap schema.
-
-## Purpose
-
-Morphiq Rank transforms raw scan findings into an actionable, prioritized roadmap. It determines severity, assigns progressive discovery tiers, calculates priority scores, and controls how many issues are revealed. The output tells morphiq-build what to fix and in what order.
-
-## Workflow
-
-### Step 1: Ingest Scan Report
-
-Parse the Scan Report JSON. Extract per-page scores, domain-level scores, all identified issues, and the overall pipeline score (0–100).
-
-### Step 2: Create Issues
-
-For each finding, create a formal issue. You MUST use the EXACT issue IDs defined in `references/issue-catalog.md`. Do NOT invent abbreviations like "PF-001" or "AR-002".
-
-Examples of correct IDs: `policy-no-llms-txt`, `agentic-missing-product-schema`, `content-no-tldr`, `chunking-buried-answer`, `fanout-no-comparison-content`.
-
-| Field | Description |
-|---|---|
-| `id` | EXACT ID from issue-catalog.md in `{category}-{specific-problem}` format |
-| `category` | `agentic_readiness`, `content_quality`, `chunking_retrieval`, `query_fanout`, `policy_files`, `ai_visibility` |
-| `severity` | From issue catalog + escalation rules |
-| `summary` | One-line description |
-| `detail` | Full explanation with AI visibility impact |
-| `affected_urls` | URLs where the issue appears |
-| `remediation_hint` | Actionable fix instruction |
-
-For fanout issues, severity depends on parent prompt type fan-out depth. `site:` and citation-producing sub-queries escalate one level.
-
-For `fanout-*` issues, populate `fanout_context` from the scan report's `query_fanout.simulated_queries[]` and `query_fanout.suggested_content[]`. Each simulated query mapping to this issue becomes a `triggering_sub_queries` entry:
-- `query` ← from `simulated_queries[].query`
-- `model_origin` ← from `simulated_queries[].model` (rename `model` → `model_origin`)
-- `prompt_type` ← from `simulated_queries[].prompt_type`
-- `citation_weight` ← from `simulated_queries[].citation_weight`
-- `parent_prompt` ← for simulated queries, set to `"(simulated)"`; for `suggested_content[]` entries, use the `suggestion` field
-
-If the Delta Report's `content_creation_queue` has entries matching this issue, include their `competitor_sources` in `fanout_context.competitor_sources[]`.
-
-**Deduplication:** Technical issues hash by `brandId + checkCode + pageUrl`. AI visibility issues hash by `brandId + category + title`.
-
-**Thoroughness check:** A site scoring ~60/100 typically has 15–25 issues across all 6 categories. If you find fewer than 10, re-read the issue catalog and check every issue type against the scan data. Each page should generate at least 2–3 issues.
-
-For all issue types and severity logic, read `references/issue-catalog.md`.
-
-### Step 3: Assign Tiers
-
-| Tier | Name | Primary Categories |
+| Tier | Name | Primary categories |
 |---|---|---|
 | 1 | Foundation — Crawlability & Policy | `policy-*` |
 | 2 | Structure — Schema & Metadata | `agentic-*` |
 | 3 | Content — Depth & Coverage | `content-*`, `fanout-*`, `visibility-*` |
 | 4 | Optimization — Retrieval Quality | `chunking-*` |
 
-Edge cases: `fanout-wrong-page-type` → Tier 2. Multi-tier issues → lowest applicable tier.
-
-For tier definitions and dependency logic, read `references/tier-progression.md`.
-
-### Step 4: Calculate Priority Scores
+## Step 4: Calculate priority scores
 
 ```
 priority = (severity_weight × 0.4) + (page_impact × 0.3) + (citation_potential × 0.2) + (effort_inverse × 0.1)
 ```
 
-severity: critical=100, high=75, medium=50, low=25. page_impact: % pages affected. effort_inverse: low=100, medium=50, high=25.
+Severity weights: critical=100, high=75, medium=50, low=25. Effort inverse: low=100, medium=50, high=25.
 
-### Step 5: Apply Progressive Reveal
+## Step 5: Apply progressive reveal
 
-**Score-based reveal** — controls which tiers are shown to the user:
-- Score <30 → Show Tier 1 (Foundation) only
-- Score ≥30 → Show Tiers 1–2 (Foundation + Structure)
-- Score ≥60 → Show Tiers 1–3 (Foundation + Structure + Content)
-- Score ≥80 → Show all 4 tiers
+Score-based reveal controls which tiers are shown:
 
-Show ALL issues across all scanned pages for the revealed tiers. Do not limit to homepage only.
+- Score <30 → Tier 1 only
+- Score ≥30 → Tiers 1–2
+- Score ≥60 → Tiers 1–3
+- Score ≥80 → All 4 tiers
 
-### Step 6: Set Dependencies
+Show all issues across all scanned pages for the revealed tiers.
 
-Cross-tier: `T1 → T2 → T3 → T4`. Higher-tier issues on same URLs only become actionable when lower-tier issues are resolved. Within-tier explicit dependencies also apply.
+## Step 6: Set dependencies
 
-### Step 7: Produce Prioritized Roadmap
+Cross-tier: T1 → T2 → T3 → T4. Higher-tier issues on the same URLs become actionable only after lower-tier issues are resolved.
 
-Write the Prioritized Roadmap as JSON to `MORPHIQ-RANK.json` in the workspace root. The JSON MUST use the **exact field names and structure** shown below. Do NOT rename, flatten, or restructure fields.
+## Step 7: Write MORPHIQ-RANK.json
 
-```json
-{
-  "schema_version": "1.0",
-  "generated_at": "ISO-8601 timestamp",
-  "domain": "example.com",
-  "source_scan_score": 62,
-  "total_issues": 24,
-  "tiers": [
-    {
-      "tier": 1,
-      "name": "Foundation — Crawlability & Policy",
-      "description": "Ensure AI crawlers can access and understand the site",
-      "estimated_impact": "high",
-      "actions": [
-        {
-          "priority": 1,
-          "issue_id": "policy-no-llms-txt",
-          "category": "policy_files",
-          "severity": "high",
-          "impact_score": 90,
-          "effort": "medium",
-          "summary": "No llms.txt file found",
-          "remediation": "Create llms.txt with site summary and key pages",
-          "affected_urls": [],
-          "page_type": null,
-          "depends_on": []
-        }
-      ]
-    },
-    {
-      "tier": 2,
-      "name": "Structure — Schema & Metadata",
-      "description": "Add machine-readable structure so AI can extract facts",
-      "estimated_impact": "high",
-      "actions": [
-        {
-          "priority": 3,
-          "issue_id": "agentic-missing-product-schema",
-          "category": "agentic_readiness",
-          "severity": "high",
-          "impact_score": 85,
-          "effort": "medium",
-          "summary": "No Product schema on product page",
-          "remediation": "Add JSON-LD Product schema",
-          "affected_urls": ["https://example.com/product"],
-          "page_type": "product",
-          "depends_on": []
-        }
-      ]
-    },
-    {
-      "tier": 3,
-      "name": "Content — Depth & Coverage",
-      "description": "Fill content gaps that prevent AI citations",
-      "estimated_impact": "medium",
-      "actions": [
-        {
-          "priority": 5,
-          "issue_id": "fanout-no-pricing-content",
-          "category": "query_fanout",
-          "severity": "high",
-          "impact_score": 80,
-          "effort": "high",
-          "summary": "No pricing content for pricing sub-queries",
-          "remediation": "Create dedicated pricing page",
-          "affected_urls": [],
-          "page_type": "pricing",
-          "depends_on": [],
-          "fanout_context": {
-            "triggering_sub_queries": [
-              {
-                "query": "site:example.com pricing official",
-                "model_origin": "openai",
-                "prompt_type": "category",
-                "citation_weight": "site_targeted",
-                "parent_prompt": "best widgets for teams 2026"
-              }
-            ],
-            "competitor_sources": []
-          }
-        }
-      ]
-    },
-    {
-      "tier": 4,
-      "name": "Optimization — Retrieval & Citation Quality",
-      "description": "Fine-tune content for LLM chunking and citation patterns",
-      "estimated_impact": "low",
-      "actions": []
-    }
-  ]
-}
-```
+Write to workspace root using your file-write tool, not shell heredoc or `cat`.
 
-**Critical field rules:**
-- Top-level MUST have `source_scan_score`, `total_issues`, `domain`, `tiers[]`
-- Each tier has `tier` (number), `name`, `description`, `estimated_impact`, `actions[]`
-- Each action uses `issue_id` (NOT `id`), `impact_score` (NOT `priority_score`), `remediation` (NOT `remediation_hint`), `depends_on` (NOT `dependencies`)
-- `fanout_context` is ONLY for `fanout-*` issues — includes `triggering_sub_queries[]` with `model_origin`, `citation_weight`, `parent_prompt`
-- Actions are sorted by `priority` (ascending = highest priority first) within each tier
-- Issue IDs MUST come from `references/issue-catalog.md`
+Required fields: `schema_version`, `generated_at`, `domain`, `source_scan_score`, `total_issues`, `tiers[]`.
+Each tier has: `tier` (1-4), `name`, `description`, `estimated_impact`, `actions[]`.
+Each action has: `priority`, `issue_id`, `category`, `severity`, `impact_score`, `effort`, `summary`, `remediation`, `affected_urls[]`, `depends_on[]`.
+For fanout issues, include `fanout_context` with `triggering_sub_queries[]` and `competitor_sources[]`.
 
-After writing the JSON file, display a human-readable roadmap showing: tier-by-tier breakdown, issue count per tier, top 3 issues per tier with severity and affected URLs, and the recommended execution order.
+See `references/output-contract.md` for full validation rules.
 
-## Reconciliation (Re-runs)
+After writing, display a human-readable roadmap: tier-by-tier breakdown, issue count per tier, top 3 issues per tier with severity and affected URLs.
 
-On subsequent scans with existing issues:
-1. Auto-close issues where the check now passes (unless PR-linked)
-2. Escalate worsened issues
-3. Create new issues for new findings
-4. Detect regressions (previously completed issues re-appearing)
+## Reconciliation (re-runs)
 
-For issue lifecycle and auto-close logic, read `references/tier-progression.md`.
+On subsequent scans with existing issues: auto-close resolved issues (unless PR-linked), escalate worsened issues, create new issues for new findings, detect regressions. See `references/tier-progression.md` for lifecycle rules.
 
-## Reference Files
+End with:
 
-| File | Purpose |
-|---|---|
-| `references/issue-catalog.md` | All issue types (50+), severity logic, deduplication, check code mapping |
-| `references/tier-progression.md` | 4-tier model, dependencies, priority formula, reveal thresholds, lifecycle |
+> **Rank complete.** MORPHIQ-RANK.json written to workspace root.
+> To continue: type **"Run Morphiq Build"** to generate fixes for the prioritized issues.

@@ -1,0 +1,65 @@
+[
+  {
+    "id": "track-trigger-cycle",
+    "prompt": "Run a tracking cycle",
+    "expected": {
+      "skill_invoked": "morphiq-track",
+      "output_files": ["MORPHIQ-TRACKER.md", "MORPHIQ-DELTA-REPORT.json"],
+      "does_not_chain": ["morphiq-scan", "morphiq-rank", "morphiq-build"]
+    }
+  },
+  {
+    "id": "track-trigger-visibility",
+    "prompt": "Measure AI visibility for my brand",
+    "expected": {
+      "skill_invoked": "morphiq-track",
+      "asks_for": ["brand", "api_keys"]
+    }
+  },
+  {
+    "id": "track-trigger-sov",
+    "prompt": "Check share of voice",
+    "expected": {
+      "skill_invoked": "morphiq-track"
+    }
+  },
+  {
+    "id": "track-trigger-analyze",
+    "prompt": "Run Morphiq Analyze",
+    "expected": {
+      "skill_invoked": "morphiq-track"
+    }
+  },
+  {
+    "id": "track-trigger-geo",
+    "prompt": "Check my GEO score",
+    "expected": {
+      "skill_invoked": "morphiq-track"
+    }
+  },
+  {
+    "id": "track-trigger-prompts",
+    "prompt": "Generate prompts for tracking",
+    "expected": {
+      "skill_invoked": "morphiq-track"
+    }
+  },
+  {
+    "id": "track-requires-api-keys",
+    "prompt": "Run Morphiq Track",
+    "expected": {
+      "skill_invoked": "morphiq-track",
+      "validates_api_keys": true,
+      "no_fabricated_data": true
+    }
+  },
+  {
+    "id": "track-real-data-only",
+    "prompt": "Track citations for my brand",
+    "expected": {
+      "skill_invoked": "morphiq-track",
+      "no_simulated_responses": true,
+      "no_placeholder_data": true
+    }
+  }
+]

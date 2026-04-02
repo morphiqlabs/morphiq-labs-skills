@@ -23,36 +23,34 @@ Recommended user command flow:
 3. Now run Morphiq Build to fix those issues
 4. Then run Morphiq Analyze (morphiq-track): generate prompts from website context, run providers with user API keys, capture responses/sources, feed content workflows, and update MORPHIQ-TRACKER.md
 
-### Initial Audit
+### Important: One Skill Per Turn
 
-The user triggers the full audit-to-issue pipeline in a single instruction:
+**Each skill must be invoked in its own separate chat message.** Do NOT ask to run "the full pipeline" or "scan then rank" in a single prompt — this causes all skills to load simultaneously and none will execute properly.
 
-> "Use Morphiq Scan to audit the entire website, then use Morphiq Rank to create the issues."
+The correct pattern is four separate messages, each waiting for the previous to complete:
 
-This runs two skills sequentially:
+**Message 1:** `Run Morphiq Scan on https://www.example.com`
+→ Wait for `MORPHIQ-SCAN.json` to appear in the workspace root.
+
+**Message 2:** `Run Morphiq Rank`
+→ Wait for `MORPHIQ-RANK.json` to appear in the workspace root.
+
+**Message 3:** `Run Morphiq Build`
+→ Wait for `MORPHIQ-BUILD.json` to appear in the workspace root.
+
+**Message 4:** `Run Morphiq Analyze`
+→ Requires API keys set in environment. Wait for `MORPHIQ-TRACKER.md` and `MORPHIQ-DELTA-REPORT.json`.
+
+### Skill Steps
 
 1. **morphiq-scan** audits the domain across all evaluation categories, scores it on a 100-point rubric, and outputs a Scan Report.
-2. *(optional)* **normalize-scan.py** — If the scan JSON uses non-standard keys, run `python scripts/normalize-scan.py MORPHIQ-SCAN.json` to transform it into the correct pipeline schema. This is a safety net; compliant output passes through unchanged.
-3. **morphiq-rank** consumes the Scan Report, creates prioritized issues with accurate references, and outputs a Prioritized Roadmap. Rank also has built-in key alias mapping for common variations.
-
-The user reviews the issues. When ready to fix:
-
-> "Use Morphiq Build to fix the issues."
-
+2. **morphiq-rank** consumes the Scan Report, creates prioritized issues with accurate references, and outputs a Prioritized Roadmap.
 3. **morphiq-build** consumes the Prioritized Roadmap and produces build artifacts — the actual content, schema, and policy files that resolve each issue.
-
-### Ongoing Workflows
-
-After the initial audit and build cycle, **morphiq-track** drives three ongoing workflows:
-
-> "Use Morphiq Analyze (Morphiq Track) to run a tracking cycle."
-
-4. **morphiq-track** generates prompts from context, runs provider queries (requires user API keys), captures sources and citations, and updates `MORPHIQ-TRACKER.md` — the persistent state file that records scores, issues, SoV deltas, prompts, competitors, and content creation queues. This file is updated every run and serves as input for all downstream workflows.
+4. **morphiq-track** generates prompts, runs provider queries (requires user API keys), captures sources and citations, and updates `MORPHIQ-TRACKER.md`.
 
 From the tracker, users invoke specific workflows:
 
-> "Use Morphiq Build to optimize existing content." (Content Optimization)
-> "Use Morphiq Build to create new content." (Content Creation)
+> `Run Morphiq Build` (Content Optimization or Content Creation — specify which)
 
 ---
 

@@ -1,123 +1,90 @@
 ---
 name: morphiq-build
-description: This skill should be used when the user asks to "fix the issues", "optimize existing content", "create new content for AI visibility", "run Morphiq Build", "generate schema markup", "create an llms.txt file", "run the content lab", or mentions building content fixes, generating schema, rewriting content for AI citations, or creating policy files. Consumes a Prioritized Roadmap and produces build artifacts through a 6-step content lab pipeline.
+description: >-
+  Consumes MORPHIQ-RANK.json and produces build artifacts (content, schema, metadata, policy files) through
+  a 6-step content lab pipeline. Use when the user asks to "fix the issues", "optimize existing content",
+  "create new content for AI visibility", "run Morphiq Build", "generate schema markup", "create an
+  llms.txt file", "run the content lab", or mentions building content fixes, generating schema, rewriting
+  content for AI citations, or creating policy files.
+license: Apache-2.0
 metadata:
-  version: "0.6.1"
+  version: "0.7.1"
   author: morphiq-labs
 ---
 
-## ⚠️ STOP — READ THIS FIRST
+This skill runs one step only. Do not chain to morphiq-track.
 
-**YOU MUST EXECUTE THIS WORKFLOW STEP BY STEP. DO NOT SUMMARIZE. DO NOT DESCRIBE. DO NOT EXPLAIN WHAT YOU WOULD DO.**
+Read `MORPHIQ-RANK.json` from the workspace root now. If the file does not exist, stop and tell the user to run Morphiq Rank first.
 
-Your FIRST action must be a tool call — read `MORPHIQ-RANK.json` from the workspace root RIGHT NOW. If that file doesn't exist, check for user prompt or existing content. If you respond with text describing what you'll do instead of calling a tool, you have failed.
+## Entry points
 
-**Required output file:** `MORPHIQ-BUILD.json` (exactly this filename) in the workspace root + content artifact files.
+- **Path A — From roadmap:** Process issues from `MORPHIQ-RANK.json` by tier and priority. Route each to the appropriate fix workflow (see routing table below).
+- **Path B — From user prompt:** Accept topic, optional source URLs (up to 5), optional ICP/brand context. Route to the content lab pipeline.
+- **Path C — From existing content:** Accept content URL or raw text. Route to quality rewrite (Step 5).
 
-START BELOW — READ THE RANK FILE IMMEDIATELY.
+## Issue type → fix routing
 
-## Pipeline Position
-
-Step 3 of 4 — consumes morphiq-rank output.
-- **Input:** Prioritized Roadmap (JSON) OR user prompt OR existing content.
-- **Output:** Build Output (JSON + artifacts) → consumed by morphiq-track.
-- **Data contract:** See `PIPELINE.md` §3 for the Build Output schema.
-
-## Entry Points
-
-**Path A — From Prioritized Roadmap:** Process issues by tier and priority. Route each to the appropriate fix workflow.
-
-**Path B — From User Prompt:** Accept topic, optional source URLs (up to 5), optional ICP/brand context. Route to content lab pipeline.
-
-**Path C — From Existing Content:** Accept content URL or raw text. Route to quality rewrite workflow.
-
-## Content Lab Pipeline (6 Steps)
-
-### Step 1: Ingest Sources
-
-Validate URLs, filter blocked domains, deduplicate, cap at 10. Accept raw text or PDF alternatives. **Halt if zero valid sources.**
-
-### Step 2: Extract Content
-
-Crawl each URL → clean markdown. Extract title, content, outbound links, publish date. **Halt if zero successful extractions.**
-
-### Step 3: Analyze Gaps
-
-Analyze against query space. Identify 5 gap types:
-
-| Gap Type | What Is Missing |
+| Issue category | Fix approach |
 |---|---|
-| Content | Unanswered questions, missing perspectives |
-| Data | Missing statistics, quantitative evidence |
-| Format | Wrong format for LLM retrieval |
-| Depth | Surface-level, no expert insight |
-| Fanout coverage | Sub-queries AI would chain but site cannot answer |
-
-Detect comparative intent. Evaluate fanout coverage using content type → sub-query rules. Generate up to 5 search queries.
-
-For gap taxonomy and severity, read `references/gap-taxonomy.md`.
-
-### Step 4: Research to Fill Gaps
-
-Run up to 5 live web searches. Collect authoritative sources, statistics (number + source + URL), expert quotes (speaker + credential), industry insights. If comparative intent, dedicate 1 search to brand data.
-
-For citation rules, read `references/enrichment-sources.md`.
-
-### Step 5: Generate / Rewrite
-
-Produce final content applying Morphiq standard:
-- E-E-A-T signals, name-drop citations, expert quotes
-- Heading hierarchy, 50–75 word paragraphs, direct-answer blocks
-- Brand positioning (comparative or authority mode)
-- 1,200–1,600 words, 5–7 H2 sections, FAQ with 3–5 Q&As
-- Minimum 3 statistics, 1 expert quote, sources section
-- No fabricated case studies
-
-For full pipeline spec, read `references/content-lab-pipeline.md`.
-
-### Step 6: Validate Fanout Coverage (Fanout Issues Only)
-
-For `fanout-*` issues with `fanout_context`: validate generated content addresses all triggering sub-queries and meets the competitive quality floor. If coverage < 80% or quality floor not met, revise once. Skip for non-fanout content.
-
-Run `scripts/validate-coverage.py` with generated content + triggering sub-queries + quality floor.
-
-## Post-Pipeline Processing
-
-| Process | What It Does | Reference |
-|---|---|---|
-| Schema Injection | Classify content type, generate JSON-LD. New content: embed schema in content artifact. Existing content: separate schema artifact with implementation tracking. | `references/schema-templates.md` |
-| Metadata Optimization | Meta description, slug, OG tags | `references/metadata-patterns.md` |
-| llms.txt Generation | Full autonomous pipeline: scrape → LLM → validate → repair → template fallback | `references/llms-txt-spec.md` |
-| Content Restructuring | Fix headings, split paragraphs | — |
-| Internal Linking | Link related pages for `site:` coverage | `references/content-lab-pipeline.md` |
-| Enrichment | Additional search for missing stats/citations | `references/enrichment-sources.md` |
-| FAQ Generation | Generate FAQ from gap analysis | `references/faq-guidelines.md` |
-
-## Issue Type → Fix Routing
-
-| Issue Category | Fix Approach |
-|---|---|
-| `agentic-*` schema | Schema Injection — generate JSON-LD |
-| `agentic-*` metadata | Metadata Optimization — generate tags |
-| `content-*` quality | Quality Rewrite — Step 5 pipeline |
-| `chunking-buried-answer` | Quality Rewrite — Step 5 pipeline (Claude-driven rewrite to answer-first structure) |
-| `chunking-*` structure (other) | Content Restructuring |
-| `policy-*` files | Policy file generation |
-| `fanout-*` coverage | Full 6-step pipeline for new content. When `fanout_context` is present, pass `triggering_sub_queries` to Step 3 and `competitor_sources` to Step 4. Run Step 6 (coverage validation) before post-pipeline processing. |
+| `agentic-*` schema | Schema injection — read `references/schema-templates.md` before generating JSON-LD |
+| `agentic-*` metadata | Metadata optimization — read `references/metadata-patterns.md` before generating tags |
+| `content-*` quality | Quality rewrite via Step 5 |
+| `chunking-buried-answer` | Quality rewrite via Step 5 (answer-first restructure) |
+| `chunking-*` structure | Content restructuring (fix headings, split paragraphs) |
+| `policy-*` files | Policy file generation — read `references/llms-txt-spec.md` before creating llms.txt |
+| `fanout-*` coverage | Full 6-step pipeline. Pass `fanout_context.triggering_sub_queries` to Step 3 and `competitor_sources` to Step 4. Run Step 6 before post-pipeline. |
 | `visibility-*` | Enrich existing content via pipeline |
 
-## Build Output
+## Content lab pipeline (6 steps)
 
-Artifacts with `type`: "content", "schema", "metadata", "policy_file". Each includes placement instructions.
+### Step 1: Ingest sources
 
-## Reference Files
+Validate URLs, filter blocked domains, deduplicate, cap at 10. Halt if zero valid sources.
 
-| File | Purpose |
+### Step 2: Extract content
+
+Fetch each URL → clean markdown. Extract title, content, outbound links, publish date. Halt if zero successful extractions.
+
+### Step 3: Analyze gaps
+
+Read `references/gap-taxonomy.md` before analyzing. Identify 5 gap types: content, data, format, depth, fanout coverage. Detect comparative intent. Generate up to 5 search queries.
+
+### Step 4: Research to fill gaps
+
+Run up to 5 live web searches. Read `references/enrichment-sources.md` before collecting sources — it defines citation format, source preferences, and quality thresholds.
+
+### Step 5: Generate or rewrite
+
+Read `references/content-lab-pipeline.md` before writing — it defines the full Morphiq content standard (E-E-A-T signals, heading hierarchy, word targets, FAQ rules).
+
+### Step 6: Validate fanout coverage (fanout issues only)
+
+For `fanout-*` issues with `fanout_context`: validate generated content addresses all triggering sub-queries. Run `scripts/validate-coverage.py` if available, otherwise manually verify each sub-query is addressed. Revise once if coverage < 80%.
+
+## Post-pipeline processing
+
+After generating content, apply these as needed:
+
+| Process | Reference |
 |---|---|
-| `references/content-lab-pipeline.md` | Full 6-step pipeline with I/O formats |
-| `references/gap-taxonomy.md` | Gap types, severity, search query rules |
-| `references/enrichment-sources.md` | Citation format, source preferences |
-| `references/schema-templates.md` | JSON-LD templates, skip conditions |
-| `references/metadata-patterns.md` | SEO metadata rules |
-| `references/llms-txt-spec.md` | llms.txt spec and generation |
-| `references/faq-guidelines.md` | FAQ generation rules |
+| Schema injection (JSON-LD) | `references/schema-templates.md` |
+| Metadata (meta description, OG tags) | `references/metadata-patterns.md` |
+| llms.txt generation | `references/llms-txt-spec.md` |
+| FAQ generation | `references/faq-guidelines.md` |
+| Enrichment (missing stats/citations) | `references/enrichment-sources.md` |
+
+Read the relevant reference file before producing each artifact.
+
+## Write MORPHIQ-BUILD.json
+
+Write to workspace root using your file-write tool, not shell heredoc or `cat`.
+
+Required fields: `schema_version`, `generated_at`, `domain`, `source_roadmap_score`, `entry_point` ("prompt" or "existing_content"), `artifacts[]`, `summary`.
+Each artifact has: `artifact_id` (build-001, build-002...), `type`, `action_ref` (issue_id, priority, tier), `target_url`, `title`, `content` (format + body), `placement` (instruction + selector).
+Schema artifacts include `status`: "designed" (existing_content) or "embedded" (prompt).
+`summary` has: `total_artifacts`, `by_type`, `issues_addressed[]`, `tiers_covered[]`.
+
+End with:
+
+> **Build complete.** MORPHIQ-BUILD.json written to workspace root.
+> To continue: type **"Run Morphiq Analyze"** to measure AI visibility with real provider API calls (API keys required).

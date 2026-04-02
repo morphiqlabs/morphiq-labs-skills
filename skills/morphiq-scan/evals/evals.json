@@ -1,0 +1,52 @@
+[
+  {
+    "id": "scan-trigger-domain",
+    "prompt": "Scan example.com for AI visibility",
+    "expected": {
+      "skill_invoked": "morphiq-scan",
+      "output_file": "MORPHIQ-SCAN.json",
+      "output_contains": ["domain", "pages", "category_scores", "overall_score"],
+      "does_not_chain": ["morphiq-rank", "morphiq-build", "morphiq-track"]
+    }
+  },
+  {
+    "id": "scan-trigger-audit",
+    "prompt": "Audit trymudra.com for LLM readiness",
+    "expected": {
+      "skill_invoked": "morphiq-scan",
+      "output_file": "MORPHIQ-SCAN.json"
+    }
+  },
+  {
+    "id": "scan-trigger-check",
+    "prompt": "Check if my site is optimized for LLMs",
+    "expected": {
+      "skill_invoked": "morphiq-scan",
+      "asks_for_domain": true
+    }
+  },
+  {
+    "id": "scan-five-categories",
+    "prompt": "Run a Morphiq Scan on docs.example.com",
+    "expected": {
+      "skill_invoked": "morphiq-scan",
+      "categories_scored": ["agentic_readiness", "content_quality", "chunking_retrieval", "query_fanout", "policy_files"],
+      "score_range": [0, 100]
+    }
+  },
+  {
+    "id": "scan-handoff-message",
+    "prompt": "Scan example.com",
+    "expected": {
+      "skill_invoked": "morphiq-scan",
+      "completion_message_contains": "Morphiq Rank"
+    }
+  },
+  {
+    "id": "scan-negative-no-trigger",
+    "prompt": "Help me write a blog post about AI",
+    "expected": {
+      "skill_invoked": null
+    }
+  }
+]

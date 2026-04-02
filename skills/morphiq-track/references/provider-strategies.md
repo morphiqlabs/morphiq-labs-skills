@@ -56,7 +56,7 @@ Use this reference when morphiq-track configures and executes queries against AI
 
 ## Prompt Distribution
 
-Prompts are split evenly across providers. Each provider tests a subset, not all prompts:
+Prompts are split evenly across configured providers. Each provider tests a subset, not all prompts. If one or more provider keys are missing, those providers are skipped with a warning:
 
 ```
 per_provider_count = ceil(total_prompts / active_provider_count)
